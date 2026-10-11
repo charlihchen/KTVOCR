@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>KTV OCR Renamer</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header class="topbar">
+  <h1 data-i18n="app_title">KTV OCR Renamer</h1>
+  <button id="langToggle" class="ghost" type="button">中文</button>
+</header>
+
+<main>
+  <section id="uploadCard" class="card">
+    <h2 data-i18n="upload_title">Upload karaoke video</h2>
+    <p class="muted" data-i18n="upload_hint">Drop a video file below or pick one. The first 30 seconds are scanned for on-screen text and audio language.</p>
+    <div id="dropzone" tabindex="0">
+      <span data-i18n="drop_hint">Drag &amp; drop a video file here</span>
+      <span class="or" data-i18n="or">or</span>
+      <label class="btn" for="fileInput" data-i18n="choose">Choose file</label>
+      <input id="fileInput" type="file" accept=".mp4,.mkv,.avi,.mov,.ts,.m2ts,.wmv,.flv,.webm" hidden />
+    </div>
+    <div class="row">
+      <button id="analyzeBtn" class="primary" type="button" data-i18n="analyze">Analyze</button>
+    </div>
+  </section>
+
+  <section id="resultCard" class="card hidden">
+    <h2 data-i18n="result_title">Results — confirm, then rename</h2>
+    <video id="player" controls playsinline></video>
+
+    <h3 data-i18n="frames_title">Sampled frames</h3>
+    <div id="frames" class="frames"></div>
+
+    <h3 data-i18n="candidates_title">OCR text candidates</h3>
+    <p class="muted small" data-i18n="chips_hint">Tap a chip's buttons to copy its text into the Singer or Title field.</p>
+    <div id="chips" class="chips"></div>
+
+    <div class="grid">
+      <label><span data-i18n="singer">Singer</span><input id="singer" type="text" autocomplete="off" /></label>
+      <label><span data-i18n="title">Song title</span><input id="title" type="text" autocomplete="off" /></label>
+      <label><span data-i18n="language">Language</span><select id="language"></select></label>
+      <label><span data-i18n="category">Category</span><select id="category"></select></label>
+    </div>
+
+    <h3 data-i18n="preview_title">Filename preview</h3>
+    <div id="preview" class="preview">—</div>
+
+    <div class="row">
+      <button id="renameBtn" class="primary" type="button" data-i18n="rename">Rename &amp; Save</button>
+      <button id="nextBtn" class="ghost" type="button" data-i18n="next">Next song</button>
+    </div>
+    <p id="status" class="status" role="status"></p>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
