@@ -26,6 +26,7 @@ Of cuse that capture the video audio to see what kind of language that it is sin
 我有約一萬首卡拉OK的歌(445 GB)，但是它們的檔名都是數字而非"歌手-歌名"的檔名。
 所以希望藉由???討論園地的大家之"人工"智慧力量來完成這一萬多首卡拉OK歌的檔名更名。
 如此的檔名就更容易加歌到 CrazyKTV 卡拉OK點歌軟體 中。
+
 Source: 
 - [CrazyKTV 加歌程式](https://github.com/CrazyKTV/SongMgr)
 - [CrazyKTV 電腦卡拉OK系統社團](https://www.facebook.com/groups/1915014728785932/)
