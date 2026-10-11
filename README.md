@@ -45,8 +45,8 @@ Source:
 
 | 檔名的一部分 | 1 | 2 | 3 | 4 | 5 | 6 |
 |---|---|---|---|---|---|---|
-| 語言 | English | Chinese | Japanese | Korean | Taiwanese | Cantonese |  
-| 分類 | Male | Female | Group | Duet/Chorus |
+| 語言 | 英文 | 中文 | 日文 | 韓文 | 台語 | 廣東話 |  
+| 分類 | 男生 | 女生 | 團體 | 合唱 |
 
 ### 檔名例子
 
