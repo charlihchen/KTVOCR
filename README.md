@@ -13,6 +13,14 @@ Write down as many as information from the song, and then close the video, then 
 So, fopefully to write an APP to load or scan those files and do the video OCR to grap the singer name and song title.
 Of cuse that capture the video audio to see what kind of language that it is singing? Chinese, Taiwanese, English, Korean, or Japanese etc.
 
+### fielname sampler
+
+- Madonna-Papa Don't Preach-英語-女歌星.mp4
+- Kylie Minogue-I Should Be So Lucky-英語-外國女.mkv
+- George Michael+Elton John-Don't Let The Sun Go Down On Me-英語-合唱.mkv
+- ABBA-Dancing Queen(1976)-英語-外國團體.mkv
+- Savage Garden-Truly Madly Deeply-英語-團體.mkv
+
 ## in Chinese
 
 我有約一萬首卡拉OK的歌(445 GB)，但是它們的檔名都是數字而非"歌手-歌名"的檔名。
@@ -28,4 +36,11 @@ Source:
 註解:
 原來想說等AI技術成熟後;看看有沒有影片辨識來更檔名的程式；看來目前還是由大家的"人工"智慧力量來完成比較實際。
 民謠檔案夾內的歌檔可以以後來再處理或不處理，因為這些歌對台灣來講比較不流行。
+
+### 檔名例子
+
+- 林俊傑-江南(海蝶)-國語-男歌星.mkv
+- 莫文蔚-這世界那麼多人(HD)-國語-女歌星.mp4
+- 郭家瑋+DIOR大穎-過了幾天-國語-合唱.mkv
+- 動力火車-忠孝東路走九遍-國語-團體.mkv
 
