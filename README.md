@@ -55,3 +55,11 @@ Source:
 - 郭家瑋+DIOR大穎-過了幾天-國語-合唱.mkv
 - 動力火車-忠孝東路走九遍-國語-團體.mkv
 
+---
+
+## KTV OCR Renamer App
+
+See [`app/`](app/) for a tool that automates the renaming: it scans karaoke videos, uses OCR to read the song title and singer from the video frames, detects the sung language from the audio, and renames files to `singer-songName-language-songCategory`.
+
+- **Web UI** — upload videos one by one, confirm the OCR guesses with one click, rename.
+- **Batch mode** — `python batch.py scan <folder> -o guesses.csv`, review/edit the CSV, then `python batch.py apply guesses.csv --outdir renamed/`.
