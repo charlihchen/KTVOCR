@@ -3,7 +3,7 @@ Karaoke music video OCR
 
 ## in English
 
-There are 10,000 Karaoke music video filenames need to be renamed as singer_songname_songtype...
+There are 10,000 Karaoke music video filenames need to be renamed as singer-songName-language-songCategory...
 
 By human, you have to open and play file one by one for 10,000 times to recognize the song as Chinese, Englsih, Japanese, or Korean etc. language, and then you will see the song title and the singer or group name, then regonize the song as fork, pop, or children song etc.
 
