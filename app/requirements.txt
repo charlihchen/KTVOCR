@@ -1,0 +1,7 @@
+# First run downloads the EasyOCR + faster-whisper models (~1-2 GB).
+# ffmpeg must be installed on the system and available on PATH.
+fastapi
+uvicorn[standard]
+python-multipart
+easyocr
+faster-whisper
