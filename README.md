@@ -21,6 +21,7 @@ Of cuse that capture the video audio to see what kind of language that it is sin
 Source: 
 - [CrazyKTV 加歌程式](https://github.com/CrazyKTV/SongMgr)
 - [CrazyKTV 電腦卡拉OK系統社團](https://www.facebook.com/groups/1915014728785932/)
+
 我已初步瀏覽這些影片而將它們歸納到適當的檔案夾中， 
 接下來就希望大家的分工來幫忙瀏覽影片來將它的檔名更名；然後上傳新檔名。
 新檔名格式最好還保留原檔名的數字: 例如: 歌手-歌名(國語-男歌星-123456).mp4。
