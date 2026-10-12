@@ -22,9 +22,11 @@ from pipeline import (
     build_filename,
     detect_language,
     extract_audio,
+    extract_frame_at,
     extract_frames,
     guess_title_singer,
     ocr_frames,
+    ocr_image,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -69,12 +71,16 @@ async def analyze(video: UploadFile = File(...)):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Could not save upload: {exc}")
 
+    warnings: list[str] = []
+
     # 1) frames -----------------------------------------------------------
     frames: list[Path] = []
     try:
         frames = extract_frames(saved_path, UPLOAD_DIR / f"{file_id}_frames", fps=1, secs=30)
     except Exception:
         frames = []
+    if not frames:
+        warnings.append("no_frames")
 
     # 2) OCR ---------------------------------------------------------------
     candidates: list[dict] = []
@@ -83,6 +89,8 @@ async def analyze(video: UploadFile = File(...)):
         candidates = [{"text": c["text"], "score": round(float(c["score"]), 2)} for c in raw[:12]]
     except Exception:
         candidates = []
+    if frames and not candidates:
+        warnings.append("no_text")
 
     # 3) title / singer guesses --------------------------------------------
     title_guess, singer_guess = "", ""
@@ -100,11 +108,15 @@ async def analyze(video: UploadFile = File(...)):
                 language_guess, language_note = detect_language(audio_path)
             except Exception:
                 language_guess, language_note = "", "detection failed"
+        if not language_guess:
+            warnings.append("no_lang")
     except Exception:
         language_guess, language_note = "", ""
+        warnings.append("no_lang")
 
-    # 5) copy up to 6 frames for the UI --------------------------------------
+    # 5) copy up to 6 frames for the UI, with per-frame OCR -------------------
     frame_urls: list[str] = []
+    frame_texts: list[dict] = []
     try:
         picked = frames
         if len(picked) > 6:
@@ -115,11 +127,18 @@ async def analyze(video: UploadFile = File(...)):
         for p in picked:
             try:
                 shutil.copy2(p, dest_dir / p.name)
-                frame_urls.append(f"/frames/{file_id}/{p.name}")
+                url = f"/frames/{file_id}/{p.name}"
+                frame_urls.append(url)
+                try:
+                    texts = [d["text"] for d in ocr_image(dest_dir / p.name)[:10]]
+                except Exception:
+                    texts = []
+                frame_texts.append({"url": url, "texts": texts})
             except Exception:
                 continue
     except Exception:
         frame_urls = []
+        frame_texts = []
     finally:
         shutil.rmtree(UPLOAD_DIR / f"{file_id}_frames", ignore_errors=True)
 
@@ -133,6 +152,43 @@ async def analyze(video: UploadFile = File(...)):
         "language_guess": language_guess,
         "language_note": language_note,
         "frames": frame_urls,
+        "frame_texts": frame_texts,
+        "warnings": warnings,
+    }
+
+
+class OcrAtRequest(BaseModel):
+    file_id: str
+    seconds: float
+
+
+@app.post("/api/ocr_at")
+async def ocr_at(req: OcrAtRequest):
+    """OCR a single frame grabbed at ``seconds`` into the uploaded video."""
+    if not _FILE_ID_RE.match(req.file_id or ""):
+        raise HTTPException(status_code=400, detail="Invalid file_id")
+    try:
+        secs = max(0.0, min(float(req.seconds or 0), 600.0))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid seconds")
+    src: Path | None = None
+    for p in UPLOAD_DIR.glob(f"{req.file_id}_*"):
+        if p.is_file() and p.suffix.lower() in ALLOWED_EXTS:
+            src = p
+            break
+    if src is None:
+        raise HTTPException(status_code=404, detail="Uploaded file not found")
+    out = FRAMES_DIR / req.file_id / f"at_{int(secs):04d}.jpg"
+    if not extract_frame_at(src, secs, out):
+        raise HTTPException(status_code=500, detail="Could not grab frame (is ffmpeg installed?)")
+    try:
+        texts = [d["text"] for d in ocr_image(out)[:12]]
+    except Exception:
+        texts = []
+    return {
+        "texts": texts,
+        "frame_url": f"/frames/{req.file_id}/{out.name}",
+        "seconds": secs,
     }
 
 
