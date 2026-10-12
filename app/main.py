@@ -28,6 +28,7 @@ from pipeline import (
     ocr_diagnostics,
     ocr_frames,
     ocr_image,
+    split_duet_singers,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -48,6 +49,7 @@ app = FastAPI(title="KTV OCR Renamer")
 class RenameRequest(BaseModel):
     file_id: str
     singer: str
+    singer2: str = ""
     title: str
     language: str
     category: str
@@ -101,11 +103,12 @@ async def analyze(video: UploadFile = File(...)):
         warnings.append("ocr_engine" if not ocr_engine.get("ok") else "no_text")
 
     # 3) title / singer guesses --------------------------------------------
-    title_guess, singer_guess = "", ""
+    title_guess, singer_guess, singer2_guess = "", "", ""
     try:
         title_guess, singer_guess = guess_title_singer(candidates)
+        singer_guess, singer2_guess = split_duet_singers(singer_guess)
     except Exception:
-        title_guess, singer_guess = "", ""
+        title_guess, singer_guess, singer2_guess = "", "", ""
 
     # 4) audio language ------------------------------------------------------
     language_guess, language_note = "", ""
@@ -157,6 +160,7 @@ async def analyze(video: UploadFile = File(...)):
         "candidates": candidates,
         "title_guess": title_guess,
         "singer_guess": singer_guess,
+        "singer2_guess": singer2_guess,
         "language_guess": language_guess,
         "language_note": language_note,
         "frames": frame_urls,
@@ -219,6 +223,7 @@ async def rename(req: RenameRequest):
     if not _FILE_ID_RE.match(req.file_id or ""):
         raise HTTPException(status_code=400, detail="Invalid file_id")
     singer = (req.singer or "").strip()
+    singer2 = (req.singer2 or "").strip()
     title = (req.title or "").strip()
     language = (req.language or "").strip()
     category = (req.category or "").strip()
@@ -240,7 +245,7 @@ async def rename(req: RenameRequest):
     if src is None:
         raise HTTPException(status_code=404, detail="Uploaded file not found (it may have been cleaned up)")
 
-    new_name = build_filename(singer, title, language, category, src.suffix.lower())
+    new_name = build_filename(singer, title, language, category, src.suffix.lower(), singer2=singer2)
     if not new_name or new_name == src.suffix.lower():
         raise HTTPException(status_code=400, detail="Could not build a filename from the given fields")
     dst = OUTPUT_DIR / new_name
