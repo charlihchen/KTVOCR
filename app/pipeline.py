@@ -87,6 +87,40 @@ def _bbox_area(bbox) -> float:
         return 0.0
 
 
+def _read_frame(reader, fp) -> list[tuple[str, float, float]]:
+    """OCR one image. Returns [(text, conf, box_area)]. Never raises."""
+    try:
+        results = reader.readtext(str(fp))
+    except Exception:
+        return []
+    out: list[tuple[str, float, float]] = []
+    for bbox, text, conf in results:
+        t = (text or "").strip()
+        if not t:
+            continue
+        try:
+            c = float(conf)
+        except Exception:
+            c = 0.0
+        out.append((t, c, _bbox_area(bbox)))
+    return out
+
+
+def ocr_image(image_path: Path) -> list[dict]:
+    """OCR a single image file.
+
+    Returns [{"text": ..., "conf": ...}] sorted by confidence desc,
+    or [] on any failure (model missing, unreadable file, ...).
+    """
+    try:
+        reader = _get_ocr_reader()
+    except Exception:
+        return []
+    items = _read_frame(reader, image_path)
+    items.sort(key=lambda it: it[1], reverse=True)
+    return [{"text": t, "conf": c} for t, c, _ in items]
+
+
 def ocr_frames(frame_paths: list[Path]) -> list[dict]:
     """Run EasyOCR over frames and aggregate repeated text.
 
@@ -104,16 +138,9 @@ def ocr_frames(frame_paths: list[Path]) -> list[dict]:
 
     agg: dict[str, float] = {}
     for fp in frame_paths:
-        try:
-            results = reader.readtext(str(fp))
-        except Exception:
-            continue
-        for bbox, text, conf in results:
-            t = (text or "").strip()
-            if not t:
-                continue
+        for t, conf, area in _read_frame(reader, fp):
             try:
-                score = float(conf) * (1.0 + log1p(_bbox_area(bbox)))
+                score = float(conf) * (1.0 + log1p(area))
             except Exception:
                 score = 0.0
             agg[t] = agg.get(t, 0.0) + score
@@ -164,6 +191,28 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------------- audio
+
+def extract_frame_at(video_path: Path, seconds: float, out_path: Path) -> bool:
+    """Grab a single frame at ``seconds`` via ffmpeg. Returns True on success."""
+    try:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", str(max(0.0, float(seconds))),
+            "-i", str(video_path),
+            "-frames:v", "1",
+            str(out_path),
+        ]
+        subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+        )
+        return out_path.exists()
+    except Exception:
+        return False
+
 
 def extract_audio(video_path: Path, out_path: Path, secs: int = 30) -> bool:
     """Extract the first ``secs`` seconds of audio as 16 kHz mono WAV."""
