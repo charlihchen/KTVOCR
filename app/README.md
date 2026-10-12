@@ -191,3 +191,11 @@ docker run -p 8000:8000 -v "$PWD/output:/srv/app/output" ktvocr
   synthetic text and tells you whether the engine itself is broken (with the
   exact error and a fix: delete `%USERPROFILE%\.EasyOCR\model` and restart to
   re-download) or whether it simply saw no text in your video.
+- **🎵 Song ID (optional):** the web UI has a Song ID button and
+  `batch.py scan` has a `--songid` flag. Both fingerprint the audio against
+  Shazam (unofficial API, needs internet) and fill title/artist on a match,
+  outranking OCR guesses. Honest limits: karaoke re-recordings and backing
+  tracks usually *don't* match Shazam's fingerprints, so a miss just falls
+  back to OCR; it never returns language or singer gender; and batch mode
+  pauses 2 s between videos to avoid hammering the unofficial endpoint —
+  don't point it at all 10,000 videos in one go and expect no throttling.
