@@ -127,7 +127,10 @@ Examples:
   and junk text, merges spacing variants ("江 南"/"江南"), downweights text
   stuck on screen the whole clip, and prefers large text in the upper
   two-thirds of the frame where title cards live (lyrics scroll at the
-  bottom). Labeled cards (`歌名：…` / `歌手：…`) always win when found.
+  bottom). Labeled cards (`歌名：…` / `歌手：…`, whitespace-tolerant) always
+  win when found; otherwise the title is the biggest text among the top
+  candidates and the singer the next strongest — bare labels like `演唱：`
+  are never used as guesses.
 - If the title card appears after 30 s, re-run with a longer window
   (`--secs 60` in batch, or edit the `secs=30` calls in `main.py`).
 - The app **copies** rather than moves/renames in place, so a bad rename never
