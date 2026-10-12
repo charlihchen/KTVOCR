@@ -29,10 +29,19 @@
 
   <section id="resultCard" class="card hidden">
     <h2 data-i18n="result_title">Results — confirm, then rename</h2>
+    <div id="warnings" class="warnings"></div>
     <video id="player" controls playsinline></video>
 
     <h3 data-i18n="frames_title">Sampled frames</h3>
+    <p class="muted small" data-i18n="frames_hint">Click a frame to inspect the text found in it.</p>
     <div id="frames" class="frames"></div>
+
+    <h3 data-i18n="frame_ocr_title">Frame OCR</h3>
+    <p class="muted small" data-i18n="frame_ocr_hint">Click a sampled frame above to see its text, or pause the video on the title card and capture that exact frame.</p>
+    <div class="row">
+      <button id="ocrAtBtn" class="ghost" type="button" data-i18n="ocr_at">OCR frame at current video position</button>
+    </div>
+    <div id="frameChips" class="chips"></div>
 
     <h3 data-i18n="candidates_title">OCR text candidates</h3>
     <p class="muted small" data-i18n="chips_hint">Tap a chip's buttons to copy its text into the Singer or Title field.</p>
