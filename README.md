@@ -67,4 +67,5 @@ See [`app/`](app/) for a tool that automates the renaming: it scans karaoke vide
 ### App Web UI screenshot
 
 <img width="624" height="885" alt="image" src="https://github.com/user-attachments/assets/1be84357-7ce1-4681-92a4-e1eb9f03f453" />
+<img width="870" height="872" alt="image" src="https://github.com/user-attachments/assets/060d860e-b9e6-4986-8dd6-26a0c48b652c" />
 
