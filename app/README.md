@@ -9,7 +9,10 @@ title and singer, listening for the language, deciding the category, and
 retyping the filename — 10,000 times. This app automates the grunt work:
 
 1. **Frames** — grabs 1 frame/sec from the first 30 s with ffmpeg.
-2. **OCR** — EasyOCR (`en` / `ch_tra` / `ch_sim` / `ja` / `ko`) reads on-screen
+2. **OCR** — EasyOCR reads on-screen text with one model each for Traditional
+   Chinese, Simplified Chinese, Japanese and Korean (each paired with English;
+   EasyOCR allows only one CJK script per reader, so detection runs once per
+   frame and every script model reads the same boxes, results merged)
    text; repeated text is ranked by confidence × text size so title cards beat
    watermarks.
 3. **Language** — faster-whisper transcribes the first 30 s of audio and
