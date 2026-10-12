@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import locale
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -61,7 +63,9 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
     files = iter_videos(video_dir)
     print(f"found {len(files)} video files")
-    tmp = Path("/tmp/ktvocr_batch")
+    # tempfile.gettempdir() is cross-platform: /tmp on macOS/Linux,
+    # %LOCALAPPDATA%/Temp on Windows (writing to C:\tmp needs admin rights).
+    tmp = Path(tempfile.gettempdir()) / "ktvocr_batch"
     tmp.mkdir(parents=True, exist_ok=True)
     out_csv.parent.mkdir(parents=True, exist_ok=True)
 
@@ -107,13 +111,29 @@ def cmd_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def _read_rows(csv_path: Path) -> list[dict]:
+    """Read a reviewed guesses CSV, tolerating Excel-on-Windows saves.
+
+    We write UTF-8-with-BOM so Excel opens it correctly, but when Excel
+    saves a CSV on a Traditional Chinese Windows machine it rewrites it
+    in the system ANSI code page (e.g. CP950) without the BOM. Falling
+    back to the system encoding keeps `apply` working on those files
+    instead of dying with a UnicodeDecodeError.
+    """
+    try:
+        with csv_path.open(encoding="utf-8-sig") as fh:
+            return list(csv.DictReader(fh))
+    except UnicodeDecodeError:
+        with csv_path.open(encoding=locale.getpreferredencoding(False)) as fh:
+            return list(csv.DictReader(fh))
+
+
 def cmd_apply(args: argparse.Namespace) -> int:
     csv_path = Path(args.csv)
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
 
-    with csv_path.open(encoding="utf-8-sig") as fh:
-        rows = list(csv.DictReader(fh))
+    rows = _read_rows(csv_path)
     if not rows:
         print("nothing to do: empty csv")
         return 0
