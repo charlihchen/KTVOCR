@@ -341,44 +341,87 @@ def ocr_diagnostics() -> dict:
 
 # ------------------------------------------------------- title / singer guess
 
-_TITLE_RE = re.compile(r"(?:歌名|曲名|曲目|歌曲|TITLE|Title|SONG|Song)\s*[:：]\s*(.+)")
-_SINGER_RE = re.compile(
-    r"(?:歌手|歌星|演唱|主唱|原唱|演唱者|ARTIST|Artist|SINGER|Singer)\s*[:：]\s*(.+)"
+# Whitespace-tolerant label matcher: "演唱：X", "演 唱 ： X", "SINGER: X" ...
+_LABEL_RE_WS = re.compile(
+    r"\s*(歌\s*手|歌\s*星|演\s*唱\s*者|演\s*唱|主\s*唱|原\s*唱"
+    r"|歌\s*名|曲\s*名|曲\s*目|歌\s*曲"
+    r"|artist|singer|title|song)\s*[:：]\s*(.+)",
+    re.IGNORECASE,
 )
+_TITLE_LABELS = {"歌名", "曲名", "曲目", "歌曲", "title", "song"}
+_SINGER_LABELS = {"歌手", "歌星", "演唱", "主唱", "原唱", "演唱者", "artist", "singer"}
+# A bare label with no value ("演唱：" / "TITLE:") — never a guess.
+_LABEL_ONLY_RE = re.compile(
+    r"^(?:歌\s*手|歌\s*星|演\s*唱\s*者|演\s*唱|主\s*唱|原\s*唱"
+    r"|歌\s*名|曲\s*名|曲\s*目|歌\s*曲"
+    r"|artist|singer|title|song)\s*[:：]?\s*$",
+    re.IGNORECASE,
+)
+_CJK_RE = re.compile(r"[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]")
+
+
+def _tidy_value(v: str) -> str:
+    """Clean a guessed value: OCR-inserted spaces are noise inside CJK text."""
+    v = (v or "").strip().strip("♪♫·•-–— ")
+    if _CJK_RE.search(v):
+        v = re.sub(r"\s+", "", v)
+    else:
+        v = re.sub(r"\s+", " ", v)
+    return v.strip()
 
 
 def guess_title_singer(candidates: list[dict]) -> tuple[str, str]:
     """Guess (title, singer) from ranked OCR candidates.
 
-    Labeled patterns (``歌名: ...`` / ``歌手: ...``) win when present;
-    otherwise the top-scoring candidate is the title guess and the next
-    distinct one is the singer guess. Returns ("", "") when empty.
+    1. Labeled lines (``歌名：X`` / ``歌手：Y``, whitespace-tolerant) win outright.
+    2. Otherwise the title is the biggest text among the top-scoring
+       candidates (karaoke title cards dominate the frame) and the singer is
+       the next strongest distinct text. Returns ("", "") when empty.
     """
-    if not candidates:
-        return ("", "")
-
-    title = ""
-    for c in candidates:
-        m = _TITLE_RE.search(c.get("text", ""))
+    title = singer = ""
+    pool: list[tuple[str, str, dict]] = []  # (spaceless key, surface, cand)
+    seen: set[str] = set()
+    for c in candidates or []:
+        surface = (c.get("text") or "").strip()
+        if not surface:
+            continue
+        key = re.sub(r"\s+", "", surface)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        if _is_credit(surface):
+            continue
+        m = _LABEL_RE_WS.match(surface)
         if m:
-            title = m.group(1).strip()
-            break
+            lbl = re.sub(r"\s+", "", m.group(1)).lower()
+            val = _tidy_value(m.group(2))
+            if val:
+                if lbl in _TITLE_LABELS and not title:
+                    title = val
+                elif lbl in _SINGER_LABELS and not singer:
+                    singer = val
+                continue
+        if _LABEL_ONLY_RE.match(key):
+            continue
+        pool.append((key, surface, c))
 
-    singer = ""
-    for c in candidates:
-        m = _SINGER_RE.search(c.get("text", ""))
-        if m:
-            singer = m.group(1).strip()
-            break
+    def _key_of(v: str) -> str:
+        return re.sub(r"\s+", "", v)
 
-    if not title:
-        title = candidates[0].get("text", "").strip()
-    if not singer:
-        for c in candidates[1:]:
-            t = c.get("text", "").strip()
-            if t and t != title:
-                singer = t
-                break
+    if not title or not singer:
+        ranked = sorted(pool, key=lambda e: e[2].get("score", 0), reverse=True)
+        title_key, singer_key = _key_of(title), _key_of(singer)
+        if not title and ranked:
+            # The song title is the biggest text on a karaoke title card.
+            top = ranked[:8]
+            pick = max(top, key=lambda e: e[2].get("max_area", 0))
+            title = _tidy_value(pick[1])
+            title_key = _key_of(title)
+        if not singer:
+            for key, surface, _c in ranked:
+                if key != title_key and key != singer_key:
+                    singer = _tidy_value(surface)
+                    break
     return (title, singer)
 
 
