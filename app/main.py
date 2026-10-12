@@ -25,6 +25,7 @@ from pipeline import (
     extract_frame_at,
     extract_frames,
     guess_title_singer,
+    ocr_diagnostics,
     ocr_frames,
     ocr_image,
 )
@@ -89,8 +90,15 @@ async def analyze(video: UploadFile = File(...)):
         candidates = [{"text": c["text"], "score": round(float(c["score"]), 2)} for c in raw[:12]]
     except Exception:
         candidates = []
+    # OCR engine diagnostics (cached; cheap after the first load attempt)
+    ocr_engine: dict = {"ok": True, "stage": "", "detail": ""}
+    try:
+        ocr_engine = dict(ocr_diagnostics())
+    except Exception:
+        ocr_engine = {"ok": False, "stage": "unknown", "detail": "diagnostics failed"}
+
     if frames and not candidates:
-        warnings.append("no_text")
+        warnings.append("ocr_engine" if not ocr_engine.get("ok") else "no_text")
 
     # 3) title / singer guesses --------------------------------------------
     title_guess, singer_guess = "", ""
@@ -154,6 +162,11 @@ async def analyze(video: UploadFile = File(...)):
         "frames": frame_urls,
         "frame_texts": frame_texts,
         "warnings": warnings,
+        "ocr_engine": {
+            "ok": bool(ocr_engine.get("ok")),
+            "stage": ocr_engine.get("stage", ""),
+            "detail": ocr_engine.get("detail", ""),
+        },
     }
 
 
@@ -185,10 +198,19 @@ async def ocr_at(req: OcrAtRequest):
         texts = [d["text"] for d in ocr_image(out)[:12]]
     except Exception:
         texts = []
+    try:
+        diag = dict(ocr_diagnostics())
+    except Exception:
+        diag = {"ok": False, "stage": "unknown", "detail": "diagnostics failed"}
     return {
         "texts": texts,
         "frame_url": f"/frames/{req.file_id}/{out.name}",
         "seconds": secs,
+        "ocr_engine": {
+            "ok": bool(diag.get("ok")),
+            "stage": diag.get("stage", ""),
+            "detail": diag.get("detail", ""),
+        },
     }
 
 
