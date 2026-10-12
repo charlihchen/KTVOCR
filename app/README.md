@@ -31,6 +31,24 @@ pip install -r requirements.txt
 > First run downloads the EasyOCR and faster-whisper models (~1–2 GB).
 > ffmpeg must be installed and on PATH.
 
+### Windows
+
+```bat
+:: ffmpeg (needs admin for winget; otherwise get a build from gyan.dev/ffmpeg/builds
+:: and add its bin folder to PATH)
+winget install Gyan.FFmpeg
+
+cd ktvocr\app
+py -m pip install -r requirements.txt
+py -m uvicorn main:app --host 127.0.0.1 --port 8000
+:: open http://127.0.0.1:8000 in your browser
+```
+
+If `uvicorn` is "not recognized", you skipped the install step or your
+terminal doesn't see Python's Scripts folder — the `py -m` prefix above
+bypasses the PATH problem entirely. (Use `python` instead of `py` if that
+is what works on your machine.)
+
 ## Web UI (one video at a time)
 
 ```bash
@@ -59,6 +77,8 @@ python batch.py scan /path/to/videos -o guesses.csv --secs 30
 # 2) open guesses.csv in Excel:
 #    - fix the *_final columns (prefilled with the guesses)
 #    - put "skip" in status for rows to leave alone
+#    - save via "CSV UTF-8 (Comma delimited)" if offered, so CJK text
+#      survives the round trip (`apply` also tolerates plain Excel saves)
 
 # 3) apply the reviewed CSV (copies files, never moves them)
 python batch.py apply guesses.csv --outdir renamed/
@@ -114,3 +134,18 @@ cd ktvocr/app
 docker build -t ktvocr .
 docker run -p 8000:8000 -v "$PWD/output:/srv/app/output" ktvocr
 ```
+
+## Web UI tips
+
+- **Language and category start empty.** They are only pre-selected when the
+  automatic detection actually found something; otherwise you choose them —
+  nothing silently defaults to 英語/男歌星.
+- **Sampled frames are clickable.** Click any frame thumbnail to see the OCR
+  text found in that specific frame, with the same one-click Singer/Title
+  assign buttons.
+- **Title card appears later in the video?** Pause the video on the title card
+  and press **"OCR frame at current video position"** — the app grabs that
+  exact frame and OCRs it. Useful when the intro runs long.
+- **Warnings appear under the results heading** when something failed, e.g.
+  frames could not be extracted (ffmpeg missing) or no text was found — so a
+  silent empty result is always explained.
