@@ -154,3 +154,7 @@ docker run -p 8000:8000 -v "$PWD/output:/srv/app/output" ktvocr
 - **Warnings appear under the results heading** when something failed, e.g.
   frames could not be extracted (ffmpeg missing) or no text was found — so a
   silent empty result is always explained.
+- **If OCR finds nothing on any frame**, the app self-tests the OCR engine on
+  synthetic text and tells you whether the engine itself is broken (with the
+  exact error and a fix: delete `%USERPROFILE%\.EasyOCR\model` and restart to
+  re-download) or whether it simply saw no text in your video.
