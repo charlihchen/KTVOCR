@@ -1,7 +1,10 @@
 # First run downloads the EasyOCR + faster-whisper models (~1-2 GB).
 # ffmpeg must be installed on the system and available on PATH.
+# numpy is pinned below 2.x: EasyOCR pulls in scipy builds compiled against
+# NumPy 1.x, which crash on import under NumPy 2 (common in conda envs).
 fastapi
-uvicorn[standard]
+uvicorn
 python-multipart
+numpy<2
 easyocr
 faster-whisper
