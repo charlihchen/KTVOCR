@@ -16,6 +16,7 @@ import locale
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -40,6 +41,8 @@ COLUMNS = [
     "title_guess",
     "singer_guess",
     "singer2_guess",
+    "songid_title",
+    "songid_artist",
     "language_guess",
     "language_note",
     "category_guess",
@@ -125,6 +128,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
         for i, vf in enumerate(files, 1):
             print(f"[{i}/{len(files)}] {vf}")
             title_guess = singer_guess = singer2_guess = language_guess = language_note = ""
+            songid_title = songid_artist = ""
             try:
                 frame_dir = tmp / f"frames_{i}"
                 frames = extract_frames(vf, frame_dir, fps=1, secs=args.secs)
@@ -134,6 +138,23 @@ def cmd_scan(args: argparse.Namespace) -> int:
                 print(f"  ocr failed: {exc}")
             finally:
                 shutil.rmtree(tmp / f"frames_{i}", ignore_errors=True)
+            if args.songid:
+                try:
+                    from songid import recognize_song
+
+                    seg = tmp / f"songid_{i}.wav"
+                    if extract_audio(vf, seg, secs=60, start=15):
+                        res = recognize_song(seg)
+                        if res.get("title"):
+                            songid_title = res["title"]
+                            s1, _s2 = split_duet_singers(res.get("artist", ""))
+                            songid_artist = s1
+                            if _s2:
+                                songid_artist = f"{s1}&{_s2}"
+                    seg.unlink(missing_ok=True)
+                except Exception as exc:
+                    print(f"  songid failed: {exc}")
+                time.sleep(2)  # be polite to the unofficial API
             try:
                 audio_path = tmp / f"audio_{i}.wav"
                 if extract_audio(vf, audio_path, secs=args.secs):
@@ -141,18 +162,26 @@ def cmd_scan(args: argparse.Namespace) -> int:
                 audio_path.unlink(missing_ok=True)
             except Exception as exc:
                 print(f"  audio failed: {exc}")
+            # Song-ID hits outrank OCR guesses for the prefilled *_final columns;
+            # the *_guess columns keep both sources visible for review.
+            fin_title, fin_singer, fin_singer2 = title_guess, singer_guess, singer2_guess
+            if songid_title:
+                s1, s2 = split_duet_singers(songid_artist)
+                fin_title, fin_singer, fin_singer2 = songid_title, s1, s2
             writer.writerow(
                 {
                     "original_path": str(vf),
                     "title_guess": title_guess,
                     "singer_guess": singer_guess,
                     "singer2_guess": singer2_guess,
+                    "songid_title": songid_title,
+                    "songid_artist": songid_artist,
                     "language_guess": language_guess,
                     "language_note": language_note,
                     "category_guess": "",
-                    "title_final": title_guess,
-                    "singer_final": singer_guess,
-                    "singer2_final": singer2_guess,
+                    "title_final": fin_title,
+                    "singer_final": fin_singer,
+                    "singer2_final": fin_singer2,
                     "language_final": language_guess,
                     "category_final": "",
                     "new_name": "",
@@ -243,6 +272,12 @@ def main() -> int:
     s.add_argument("video_dir", help="directory with karaoke videos (searched recursively)")
     s.add_argument("-o", required=True, help="output CSV path, e.g. guesses.csv")
     s.add_argument("--secs", type=int, default=30, help="seconds of video to scan (default 30)")
+    s.add_argument(
+        "--songid",
+        action="store_true",
+        help="also fingerprint audio via Shazam (unofficial API, needs internet; "
+        "best-effort — karaoke re-recordings often don't match)",
+    )
 
     a = sub.add_parser("apply", help="copy/rename files listed in a reviewed guesses CSV")
     a.add_argument("csv", help="guesses CSV with edited *_final columns")
