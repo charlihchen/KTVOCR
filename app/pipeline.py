@@ -27,17 +27,40 @@ _WHISPER_LANG_MAP = {
 }
 
 # Lazy singletons so that `import pipeline` stays cheap.
-_ocr_reader = None
 _whisper_model = None
 
+# EasyOCR allows only ONE CJK script model per Reader (each is bundled with
+# English): ch_tra, ch_sim, ja, ko each need their own Reader. The text
+# DETECTOR is script-independent, so we detect once and run RECOGNITION with
+# every loaded script model, then merge the results.
+_OCR_GROUPS = [
+    ("ch_tra", ["ch_tra", "en"]),
+    ("ch_sim", ["ch_sim", "en"]),
+    ("ja", ["ja", "en"]),
+    ("ko", ["ko", "en"]),
+]
+_ocr_readers: dict[str, object] = {}
+_ocr_reader_errors: dict[str, str] = {}
 
-def _get_ocr_reader():
-    global _ocr_reader
-    if _ocr_reader is None:
-        from easyocr import Reader
 
-        _ocr_reader = Reader(["en", "ch_tra", "ch_sim", "ja", "ko"], gpu=False)
-    return _ocr_reader
+def _get_ocr_readers() -> dict[str, object]:
+    """Lazy-load one EasyOCR Reader (CPU) per script group.
+
+    Returns {group: Reader} for every group that loaded. Failures are
+    recorded in _ocr_reader_errors and not retried. Never raises.
+    """
+    if not _ocr_readers and not _ocr_reader_errors:
+        try:
+            from easyocr import Reader
+        except Exception as exc:
+            _ocr_reader_errors["import"] = f"{type(exc).__name__}: {exc}"[:200]
+        else:
+            for group, langs in _OCR_GROUPS:
+                try:
+                    _ocr_readers[group] = Reader(langs, gpu=False)
+                except Exception as exc:
+                    _ocr_reader_errors[group] = f"{type(exc).__name__}: {exc}"[:200]
+    return dict(_ocr_readers)
 
 
 def _get_whisper_model():
@@ -143,32 +166,50 @@ def _frame_size(fp: Path) -> tuple[int, int]:
         return (0, 0)
 
 
-def _read_frame(
-    reader, fp: Path, img_h: int = 0
-) -> list[tuple[str, float, float, float]]:
-    """OCR one image. Returns [(text, conf, box_area, y_center_0to1)]. Never raises."""
+def _read_frame(fp: Path, img_h: int = 0) -> list[tuple[str, float, float, float]]:
+    """OCR one image with every loaded script model.
+
+    Text detection runs once (it is script-independent); recognition runs
+    once per script group and the results are merged. Returns
+    [(text, conf, box_area, y_center_0to1)]. Never raises.
+    """
+    readers = _get_ocr_readers()
+    if not readers:
+        return []
     try:
-        results = reader.readtext(str(fp))
+        from easyocr.utils import reformat_input
+
+        img, img_cv_grey = reformat_input(str(fp))
+        primary = next(iter(readers.values()))
+        horizontal_list, free_list = primary.detect(img, reformat=False)
+        horizontal_list, free_list = horizontal_list[0], free_list[0]
     except Exception:
         return []
     out: list[tuple[str, float, float, float]] = []
-    for bbox, text, conf in results:
-        t = _clean_text(text)
-        if not t or _is_junk(t) or _is_credit(t):
-            continue
+    for reader in readers.values():
         try:
-            c = float(conf)
+            results = reader.recognize(
+                img_cv_grey, horizontal_list, free_list, reformat=False
+            )
         except Exception:
-            c = 0.0
-        area = _bbox_area(bbox)
-        y = 0.5
-        if img_h:
+            continue
+        for bbox, text, conf in results:
+            t = _clean_text(text)
+            if not t or _is_junk(t) or _is_credit(t):
+                continue
             try:
-                ys = [p[1] for p in bbox]
-                y = (min(ys) + max(ys)) / 2.0 / img_h
+                c = float(conf)
             except Exception:
-                pass
-        out.append((t, c, area, y))
+                c = 0.0
+            area = _bbox_area(bbox)
+            y = 0.5
+            if img_h:
+                try:
+                    ys = [p[1] for p in bbox]
+                    y = (min(ys) + max(ys)) / 2.0 / img_h
+                except Exception:
+                    pass
+            out.append((t, c, area, y))
     return out
 
 
@@ -178,11 +219,7 @@ def ocr_image(image_path: Path) -> list[dict]:
     Returns [{"text": ..., "conf": ...}] sorted by confidence desc,
     or [] on any failure (model missing, unreadable file, ...).
     """
-    try:
-        reader = _get_ocr_reader()
-    except Exception:
-        return []
-    items = _read_frame(reader, image_path)
+    items = _read_frame(image_path)
     items.sort(key=lambda it: it[1], reverse=True)
     return [{"text": t, "conf": c} for t, c, _, _ in items]
 
@@ -200,18 +237,13 @@ def ocr_frames(frame_paths: list[Path]) -> list[dict]:
     Returns the top 15 as ``[{"text": ..., "score": ...}]`` sorted by score
     desc, or [] on any failure.
     """
-    try:
-        reader = _get_ocr_reader()
-    except Exception:
-        return []
-
     agg: dict[str, dict] = {}
     total = 0
     for fp in frame_paths:
         total += 1
         _, h = _frame_size(fp)
         seen: set[str] = set()
-        for t, conf, area, y in _read_frame(reader, fp, h):
+        for t, conf, area, y in _read_frame(fp, h):
             key = re.sub(r"\s+", "", t)
             d = agg.setdefault(
                 key,
@@ -261,15 +293,20 @@ def ocr_diagnostics() -> dict:
     global _ocr_diag_cache
     if _ocr_diag_cache is not None:
         return _ocr_diag_cache
-    try:
-        reader = _get_ocr_reader()
-    except Exception as exc:
+    readers = _get_ocr_readers()
+    if not readers:
+        detail = "; ".join(
+            f"{g}: {e}" for g, e in _ocr_reader_errors.items()
+        )[:300]
         _ocr_diag_cache = {
             "ok": False,
             "stage": "load",
-            "detail": f"{type(exc).__name__}: {exc}"[:300],
+            "detail": detail or "no OCR reader loaded",
         }
         return _ocr_diag_cache
+    failed = "; ".join(
+        f"{g}: {_ocr_reader_errors[g]}" for g in _ocr_reader_errors
+    )[:200]
     try:
         from PIL import Image, ImageDraw
 
@@ -278,22 +315,20 @@ def ocr_diagnostics() -> dict:
         draw.text((30, 35), "Test 123 ABC", fill="white")
         tmp = Path(tempfile.gettempdir()) / "ktvocr_selftest.png"
         img.save(tmp)
-        res = reader.readtext(str(tmp))
-        texts = [(t or "") for _, t, _ in res]
+        texts = [t for t, _, _, _ in _read_frame(tmp)]
         if any("Test" in t for t in texts):
-            _ocr_diag_cache = {
-                "ok": True,
-                "stage": "selftest",
-                "detail": "synthetic text detected",
-            }
+            detail = (
+                f"synthetic text detected "
+                f"({len(readers)}/{len(_OCR_GROUPS)} script models loaded)"
+            )
+            if failed:
+                detail += f"; failed: {failed}"
+            _ocr_diag_cache = {"ok": True, "stage": "selftest", "detail": detail}
         else:
             _ocr_diag_cache = {
                 "ok": False,
                 "stage": "selftest",
-                "detail": (
-                    "engine loaded but detected nothing on synthetic text "
-                    f"({len(texts)} boxes)"
-                ),
+                "detail": "engines loaded but detected nothing on synthetic text",
             }
     except Exception as exc:
         _ocr_diag_cache = {
