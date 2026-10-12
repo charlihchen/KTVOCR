@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Batch CLI for the KTV OCR Renamer.
 
-Two subcommands (run from inside the ``app/`` directory)::
+Run from inside the ``app/`` directory::
 
+    python batch.py check                              # verify the environment
     python batch.py scan /path/to/videos -o guesses.csv [--secs 30]
     python batch.py apply guesses.csv --outdir renamed/
 """
@@ -27,6 +28,7 @@ from pipeline import (  # noqa: E402
     extract_audio,
     extract_frames,
     guess_title_singer,
+    ocr_diagnostics,
     ocr_frames,
 )
 
@@ -54,12 +56,54 @@ def iter_videos(video_dir: Path) -> list[Path]:
     )
 
 
+def preflight() -> int:
+    """Verify ffmpeg + OCR engine before scanning; print actionable fixes.
+
+    Returns 0 when the environment can actually produce results, 2 otherwise.
+    """
+    ok = True
+    if shutil.which("ffmpeg") is None:
+        ok = False
+        print("error: ffmpeg not found on PATH.", file=sys.stderr)
+        print("  macOS:   brew install ffmpeg", file=sys.stderr)
+        print("  Windows: winget install Gyan.FFmpeg  (then reopen the terminal)", file=sys.stderr)
+        print("  Ubuntu:  sudo apt install ffmpeg", file=sys.stderr)
+    else:
+        print("ffmpeg ok")
+    print("checking OCR engine (first run downloads ~1-2 GB of models, please wait)...")
+    diag = ocr_diagnostics()
+    if not diag.get("ok"):
+        ok = False
+        print(
+            f"error: OCR engine failed [{diag.get('stage')}]: {diag.get('detail')}",
+            file=sys.stderr,
+        )
+        print("  fix: pip install -r requirements.txt, then delete the EasyOCR", file=sys.stderr)
+        print("  model folder and rerun to re-download cleanly:", file=sys.stderr)
+        print("    macOS/Linux: rm -rf ~/.EasyOCR/model", file=sys.stderr)
+        print(r"    Windows:     rmdir /s %USERPROFILE%\.EasyOCR\model", file=sys.stderr)
+    else:
+        print(f"ocr engine ok: {diag.get('detail')}")
+    try:
+        import faster_whisper  # noqa: F401
+
+        print("whisper ok: language detection available")
+    except Exception:
+        print("warning: faster-whisper not installed; language_guess will stay empty")
+        print("  fix: pip install -r requirements.txt")
+    return 0 if ok else 2
+
+
 def cmd_scan(args: argparse.Namespace) -> int:
     video_dir = Path(args.video_dir)
     out_csv = Path(args.o)
     if not video_dir.is_dir():
         print(f"error: not a directory: {video_dir}", file=sys.stderr)
         return 2
+
+    rc = preflight()
+    if rc != 0:
+        return rc
 
     files = iter_videos(video_dir)
     print(f"found {len(files)} video files")
@@ -183,6 +227,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="KTV OCR Renamer batch tool")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
+    c = sub.add_parser("check", help="verify ffmpeg / OCR / whisper are working")
+
     s = sub.add_parser("scan", help="scan videos and write a guesses CSV for review")
     s.add_argument("video_dir", help="directory with karaoke videos (searched recursively)")
     s.add_argument("-o", required=True, help="output CSV path, e.g. guesses.csv")
@@ -193,6 +239,8 @@ def main() -> int:
     a.add_argument("--outdir", required=True, help="destination dir for renamed copies")
 
     args = ap.parse_args()
+    if args.cmd == "check":
+        return preflight()
     if args.cmd == "scan":
         return cmd_scan(args)
     return cmd_apply(args)
