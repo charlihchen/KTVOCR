@@ -110,14 +110,21 @@ python batch.py apply guesses.csv --outdir renamed/
 `guesses.csv` columns:
 
 ```
-original_path, title_guess, singer_guess, language_guess, language_note,
-category_guess, title_final, singer_final, language_final, category_final,
-new_name, status
+original_path, title_guess, singer_guess, singer2_guess, language_guess,
+language_note, category_guess, title_final, singer_final, singer2_final,
+language_final, category_final, new_name, status
 ```
+
+> Duets: when the singer guess contains `feat.` / `ft` / `vs` / `&` / `、`
+> / `+` (e.g. `王菲 feat. 那英`), it is split into `singer` + `singer2`
+> automatically, and the filename becomes `singer1&singer2-title-…`
+> (e.g. `王菲&那英-相約九八-國語-合唱.mkv`). The web UI has a second singer
+> field plus a per-chip "Singer 2" button for the same thing.
 
 ## Filename format
 
 `singer-songName-language-songCategory.ext`
+(duets: `singer1&singer2-songName-language-songCategory.ext`)
 
 - Languages: 英語 國語 日語 韓語 台語 粵語
 - Categories: 男歌星 女歌星 團體 合唱 外國男 外國女 外國團體
@@ -127,6 +134,7 @@ Examples:
 - `林俊傑-江南-國語-男歌星.mkv`
 - `宇多田ヒカル-First Love-日語-女歌星.mp4`
 - `BTS-Dynamite-韓語-團體.mp4`
+- `王菲&那英-相約九八-國語-合唱.mkv`
 
 ## Language notes
 
