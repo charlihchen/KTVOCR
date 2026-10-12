@@ -34,6 +34,22 @@ pip install -r requirements.txt
 > First run downloads the EasyOCR and faster-whisper models (~1–2 GB).
 > ffmpeg must be installed and on PATH.
 
+### macOS
+
+```bash
+# ffmpeg (needs Homebrew: https://brew.sh)
+brew install ffmpeg
+
+cd ktvocr/app
+python3 -m pip install -r requirements.txt
+python3 batch.py check     # verifies ffmpeg + OCR engine + whisper
+```
+
+> Apple Silicon Macs: `pip` installs the right torch build automatically and
+> EasyOCR always runs on CPU — no extra setup. If `batch.py scan` ever gives
+> you empty guesses, run `python3 batch.py check` first: it tells you exactly
+> which piece is broken and how to fix it.
+
 ### Windows
 
 ```bat
@@ -73,6 +89,9 @@ Uploads land in `uploads/`, renamed copies in `output/`, frame thumbnails in
 
 ```bash
 cd ktvocr/app
+
+# 0) sanity check first (tells you exactly what is broken, if anything)
+python batch.py check
 
 # 1) scan everything, write machine guesses for human review
 python batch.py scan /path/to/videos -o guesses.csv --secs 30
