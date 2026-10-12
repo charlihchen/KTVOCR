@@ -30,6 +30,7 @@ from pipeline import (  # noqa: E402
     guess_title_singer,
     ocr_diagnostics,
     ocr_frames,
+    split_duet_singers,
 )
 
 VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".ts", ".m2ts", ".wmv", ".flv", ".webm"}
@@ -38,11 +39,13 @@ COLUMNS = [
     "original_path",
     "title_guess",
     "singer_guess",
+    "singer2_guess",
     "language_guess",
     "language_note",
     "category_guess",
     "title_final",
     "singer_final",
+    "singer2_final",
     "language_final",
     "category_final",
     "new_name",
@@ -121,11 +124,12 @@ def cmd_scan(args: argparse.Namespace) -> int:
         writer.writeheader()
         for i, vf in enumerate(files, 1):
             print(f"[{i}/{len(files)}] {vf}")
-            title_guess = singer_guess = language_guess = language_note = ""
+            title_guess = singer_guess = singer2_guess = language_guess = language_note = ""
             try:
                 frame_dir = tmp / f"frames_{i}"
                 frames = extract_frames(vf, frame_dir, fps=1, secs=args.secs)
                 title_guess, singer_guess = guess_title_singer(ocr_frames(frames))
+                singer_guess, singer2_guess = split_duet_singers(singer_guess)
             except Exception as exc:
                 print(f"  ocr failed: {exc}")
             finally:
@@ -142,11 +146,13 @@ def cmd_scan(args: argparse.Namespace) -> int:
                     "original_path": str(vf),
                     "title_guess": title_guess,
                     "singer_guess": singer_guess,
+                    "singer2_guess": singer2_guess,
                     "language_guess": language_guess,
                     "language_note": language_note,
                     "category_guess": "",
                     "title_final": title_guess,
                     "singer_final": singer_guess,
+                    "singer2_final": singer2_guess,
                     "language_final": language_guess,
                     "category_final": "",
                     "new_name": "",
@@ -192,6 +198,7 @@ def cmd_apply(args: argparse.Namespace) -> int:
             continue
         title = (r.get("title_final") or "").strip()
         singer = (r.get("singer_final") or "").strip()
+        singer2 = (r.get("singer2_final") or "").strip()
         language = (r.get("language_final") or "").strip()
         category = (r.get("category_final") or "").strip()
         if not (title and singer and language and category):
@@ -203,7 +210,7 @@ def cmd_apply(args: argparse.Namespace) -> int:
         if not src.is_file():
             r["status"] = "source missing"
             continue
-        new_name = build_filename(singer, title, language, category, src.suffix)
+        new_name = build_filename(singer, title, language, category, src.suffix, singer2=singer2)
         dst = outdir / new_name
         n = 1
         while dst.exists():
