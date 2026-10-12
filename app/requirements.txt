@@ -8,3 +8,7 @@ python-multipart
 numpy<2
 easyocr
 faster-whisper
+# Opt-in Shazam-style song recognition (unofficial API, needs internet).
+# The app works without it; the Song ID button / --songid flag will tell you
+# if it's missing.
+ShazamAPI
