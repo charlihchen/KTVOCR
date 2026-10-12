@@ -469,13 +469,13 @@ def extract_frame_at(video_path: Path, seconds: float, out_path: Path) -> bool:
         return False
 
 
-def extract_audio(video_path: Path, out_path: Path, secs: int = 30) -> bool:
-    """Extract the first ``secs`` seconds of audio as 16 kHz mono WAV."""
+def extract_audio(video_path: Path, out_path: Path, secs: int = 30, start: int = 0) -> bool:
+    """Extract ``secs`` seconds of audio (starting at ``start``) as 16 kHz mono WAV."""
     try:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         cmd = [
             "ffmpeg", "-y",
-            "-ss", "0", "-t", str(secs),
+            "-ss", str(start), "-t", str(secs),
             "-i", str(video_path),
             "-ac", "1", "-ar", "16000", "-vn",
             str(out_path),
