@@ -40,6 +40,8 @@ const STR = {
     warn_no_frames: "Could not extract frames — is ffmpeg installed and on PATH?",
     warn_no_text: "No text found in the sampled frames — click a frame above or capture the title-card moment.",
     warn_no_lang: "Language detection found nothing — please choose the language manually.",
+    warn_ocr_engine: "OCR engine problem: ",
+    ocr_engine_hint: "If the engine failed to load, delete the folder %USERPROFILE%\\.EasyOCR\\model and restart the app to re-download the models.",
     frame_no_text: "No text found in this frame.",
     ocr_at_working: "Capturing frame…",
     ocr_at_failed: "Could not capture/OCR that frame."
@@ -79,6 +81,8 @@ const STR = {
     warn_no_frames: "無法擷取畫面 — 請確認已安裝 ffmpeg 並加入 PATH？",
     warn_no_text: "擷取畫面中找不到文字 — 請點選上方畫面或在歌名出現時擷取影格。",
     warn_no_lang: "語言偵測沒有結果 — 請手動選擇語言。",
+    warn_ocr_engine: "OCR 引擎問題：",
+    ocr_engine_hint: "若引擎載入失敗，請刪除 %USERPROFILE%\\.EasyOCR\\model 資料夾後重啟 App 重新下載模型。",
     frame_no_text: "此影格中找不到文字。",
     ocr_at_working: "擷取影格中…",
     ocr_at_failed: "無法擷取/辨識該影格。"
@@ -230,6 +234,13 @@ async function analyze() {
       state.frameTexts[ft.url] = ft.texts || [];
     });
     renderWarnings(data.warnings);
+    if (data.ocr_engine && !data.ocr_engine.ok) {
+      const box = $("warnings");
+      const div = document.createElement("div");
+      div.textContent =
+        t("warn_ocr_engine") + (data.ocr_engine.detail || "") + " " + t("ocr_engine_hint");
+      box.appendChild(div);
+    }
     $("singer").value = data.singer_guess || "";
     $("title").value = data.title_guess || "";
     $("language").value = data.language_guess || "";
@@ -282,7 +293,16 @@ async function ocrAt() {
     img.addEventListener("click", () => renderFrameChips(state.frameTexts[data.frame_url] || []));
     fr.appendChild(img);
     renderFrameChips(data.texts || []);
-    setStatus(t("ready"));
+    if ((data.texts || []).length) {
+      setStatus(t("ready"));
+    } else if (data.ocr_engine && !data.ocr_engine.ok) {
+      setStatus(
+        t("warn_ocr_engine") + (data.ocr_engine.detail || "") + " " + t("ocr_engine_hint"),
+        true
+      );
+    } else {
+      setStatus(t("frame_no_text"));
+    }
   } catch (e) {
     setStatus(t("error") + ": " + (e.message || t("ocr_at_failed")), true);
   } finally {
