@@ -87,22 +87,87 @@ def _bbox_area(bbox) -> float:
         return 0.0
 
 
-def _read_frame(reader, fp) -> list[tuple[str, float, float]]:
-    """OCR one image. Returns [(text, conf, box_area)]. Never raises."""
+# ------------------------------------------------------- text classification
+
+# Lyricist/composer/production credits — never the performing singer.
+_CREDIT_RE = re.compile(
+    r"(作詞|作曲|編曲|作词|作曲|编曲|監製|监制|導演|导演|製作|制作|出品|發行|发行|版權|版权)"
+)
+# Channel logos / quality badges that repeat on every frame.
+_WATERMARK_WORDS = {
+    "ktv", "k歌", "伴奏", "原版", "高清", "超清", "蓝光", "藍光",
+    "hd", "1080p", "4k", "mv", "dvd", "vcd",
+}
+# Pure numbers / timestamps / punctuation-only strings.
+_JUNK_RE = re.compile(r"^[\d\s:：\-_/\\.,，。！？?!;；()（）\[\]【】「」『』《》\"'“”‘’♪♫·•–—]+$")
+_TIME_RE = re.compile(r"^\d{1,2}:\d{2}(:\d{2})?$")
+_WRAP_PAIRS = {"《": "》", "『": "』", "「": "」", "【": "】", "(": ")"}
+
+
+def _clean_text(t: str) -> str:
+    """Strip decorative wrappers (《title》) and stray music symbols."""
+    t = (t or "").strip()
+    for _ in range(3):
+        nt = t.strip()
+        if len(nt) >= 2 and nt[0] in _WRAP_PAIRS and _WRAP_PAIRS[nt[0]] == nt[-1]:
+            t = nt[1:-1].strip()
+            continue
+        break
+    return t.strip("♪♫·•-–— ")
+
+
+def _is_junk(t: str) -> bool:
+    if not t or len(t) < 2:
+        return True
+    if _TIME_RE.match(t):
+        return True
+    if _JUNK_RE.match(t):
+        return True
+    if t.lower() in _WATERMARK_WORDS:
+        return True
+    return False
+
+
+def _is_credit(t: str) -> bool:
+    return bool(_CREDIT_RE.search(t))
+
+
+def _frame_size(fp: Path) -> tuple[int, int]:
+    try:
+        from PIL import Image
+
+        with Image.open(fp) as im:
+            return im.size
+    except Exception:
+        return (0, 0)
+
+
+def _read_frame(
+    reader, fp: Path, img_h: int = 0
+) -> list[tuple[str, float, float, float]]:
+    """OCR one image. Returns [(text, conf, box_area, y_center_0to1)]. Never raises."""
     try:
         results = reader.readtext(str(fp))
     except Exception:
         return []
-    out: list[tuple[str, float, float]] = []
+    out: list[tuple[str, float, float, float]] = []
     for bbox, text, conf in results:
-        t = (text or "").strip()
-        if not t:
+        t = _clean_text(text)
+        if not t or _is_junk(t) or _is_credit(t):
             continue
         try:
             c = float(conf)
         except Exception:
             c = 0.0
-        out.append((t, c, _bbox_area(bbox)))
+        area = _bbox_area(bbox)
+        y = 0.5
+        if img_h:
+            try:
+                ys = [p[1] for p in bbox]
+                y = (min(ys) + max(ys)) / 2.0 / img_h
+            except Exception:
+                pass
+        out.append((t, c, area, y))
     return out
 
 
@@ -118,15 +183,18 @@ def ocr_image(image_path: Path) -> list[dict]:
         return []
     items = _read_frame(reader, image_path)
     items.sort(key=lambda it: it[1], reverse=True)
-    return [{"text": t, "conf": c} for t, c, _ in items]
+    return [{"text": t, "conf": c} for t, c, _, _ in items]
 
 
 def ocr_frames(frame_paths: list[Path]) -> list[dict]:
     """Run EasyOCR over frames and aggregate repeated text.
 
-    Identical stripped texts are merged with
-    ``score = sum(conf * (1 + log1p(area)))`` so text that is both confident
-    and large (title cards) outranks small watermarks.
+    Texts are cleaned (《》 wrappers stripped), lyricist/composer credits,
+    watermarks and junk are dropped, and spacing variants ("江 南"/"江南")
+    are merged. Each text scores ``sum(conf * (1 + log1p(area)))`` with two
+    karaoke-specific adjustments: text stuck on screen for most of the clip
+    (logos) is downweighted, and text in the upper two-thirds of the frame
+    (where title cards live; lyrics scroll along the bottom) is upweighted.
 
     Returns the top 15 as ``[{"text": ..., "score": ...}]`` sorted by score
     desc, or [] on any failure.
@@ -136,23 +204,56 @@ def ocr_frames(frame_paths: list[Path]) -> list[dict]:
     except Exception:
         return []
 
-    agg: dict[str, float] = {}
+    agg: dict[str, dict] = {}
+    total = 0
     for fp in frame_paths:
-        for t, conf, area in _read_frame(reader, fp):
+        total += 1
+        _, h = _frame_size(fp)
+        seen: set[str] = set()
+        for t, conf, area, y in _read_frame(reader, fp, h):
+            key = re.sub(r"\s+", "", t)
+            d = agg.setdefault(
+                key,
+                {"text": t, "score": 0.0, "nframes": 0,
+                 "max_area": 0.0, "y_sum": 0.0},
+            )
             try:
-                score = float(conf) * (1.0 + log1p(area))
+                d["score"] += float(conf) * (1.0 + log1p(area))
             except Exception:
-                score = 0.0
-            agg[t] = agg.get(t, 0.0) + score
+                pass
+            if key not in seen:
+                seen.add(key)
+                d["nframes"] += 1
+                d["y_sum"] += y
+            if area > d["max_area"]:
+                d["max_area"] = area
+                d["text"] = t  # keep the surface form with the biggest box
 
-    ranked = sorted(agg.items(), key=lambda kv: kv[1], reverse=True)[:15]
-    return [{"text": text, "score": score} for text, score in ranked]
+    ranked = []
+    for d in agg.values():
+        s = d["score"]
+        if d["nframes"] > max(8, 0.4 * total):
+            s *= 0.25  # persistent overlay: watermark / logo
+        y_avg = d["y_sum"] / max(1, d["nframes"])
+        s *= 1.35 if y_avg <= 0.68 else 0.75  # title cards live up top
+        ranked.append(
+            {
+                "text": d["text"],
+                "score": s,
+                "nframes": d["nframes"],
+                "max_area": d["max_area"],
+            }
+        )
+    ranked.sort(key=lambda r: r["score"], reverse=True)
+    return ranked[:15]
 
 
 # ------------------------------------------------------- title / singer guess
 
-_TITLE_RE = re.compile(r"(?:歌名|曲名|曲目|TITLE|Title|title)\s*[:：]\s*(.+)")
-_SINGER_RE = re.compile(r"(?:歌手|演唱|主唱|原唱|ARTIST|Artist|artist)\s*[:：]\s*(.+)")
+_TITLE_RE = re.compile(r"(?:歌名|曲名|曲目|歌曲|TITLE|Title|SONG|Song)\s*[:：]\s*(.+)")
+_SINGER_RE = re.compile(
+    r"(?:歌手|歌星|演唱|主唱|原唱|演唱者|ARTIST|Artist|SINGER|Singer)\s*[:：]\s*(.+)"
+)
 
 
 def guess_title_singer(candidates: list[dict]) -> tuple[str, str]:
