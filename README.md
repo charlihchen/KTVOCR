@@ -63,3 +63,8 @@ See [`app/`](app/) for a tool that automates the renaming: it scans karaoke vide
 
 - **Web UI** — upload videos one by one, confirm the OCR guesses with one click, rename.
 - **Batch mode** — `python batch.py scan <folder> -o guesses.csv`, review/edit the CSV, then `python batch.py apply guesses.csv --outdir renamed/`.
+
+### App Web UI screenshot
+
+<img width="624" height="885" alt="image" src="https://github.com/user-attachments/assets/1be84357-7ce1-4681-92a4-e1eb9f03f453" />
+
