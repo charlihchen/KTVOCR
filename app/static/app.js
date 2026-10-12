@@ -18,10 +18,12 @@ const STR = {
     result_title: "Results — confirm, then rename",
     frames_title: "Sampled frames",
     candidates_title: "OCR text candidates",
-    chips_hint: "Tap a chip's buttons to copy its text into the Singer or Title field.",
+    chips_hint: "Tap a chip's buttons to copy its text into the Singer, Singer 2 or Title field.",
     chip_singer: "Singer",
+    chip_singer2: "Singer 2",
     chip_title: "Title",
     singer: "Singer",
+    singer2: "Singer 2 (duet, optional)",
     title: "Song title",
     language: "Language",
     category: "Category",
@@ -59,10 +61,12 @@ const STR = {
     result_title: "分析結果 — 確認後改名",
     frames_title: "擷取畫面",
     candidates_title: "OCR 文字候選",
-    chips_hint: "點選標籤上的按鈕，可把文字填入歌手或歌名欄位。",
+    chips_hint: "點選標籤上的按鈕，可把文字填入歌手、歌手2 或歌名欄位。",
     chip_singer: "歌手",
+    chip_singer2: "歌手2",
     chip_title: "歌名",
     singer: "歌手",
+    singer2: "歌手2（合唱用，可空）",
     title: "歌名",
     language: "語言",
     category: "類別",
@@ -149,12 +153,17 @@ function renderChips() {
     btnS.className = "mini";
     btnS.textContent = t("chip_singer");
     btnS.addEventListener("click", () => { $("singer").value = c.text; updatePreview(); });
+    const btnS2 = document.createElement("button");
+    btnS2.type = "button";
+    btnS2.className = "mini";
+    btnS2.textContent = t("chip_singer2");
+    btnS2.addEventListener("click", () => { $("singer2").value = c.text; updatePreview(); });
     const btnT = document.createElement("button");
     btnT.type = "button";
     btnT.className = "mini";
     btnT.textContent = t("chip_title");
     btnT.addEventListener("click", () => { $("title").value = c.text; updatePreview(); });
-    chip.append(txt, btnS, btnT);
+    chip.append(txt, btnS, btnS2, btnT);
     box.appendChild(chip);
   });
 }
@@ -200,6 +209,7 @@ function renderFrameChips(texts) {
     chip.append(
       s,
       chipButton(t("chip_singer"), () => { $("singer").value = txt; updatePreview(); }),
+      chipButton(t("chip_singer2"), () => { $("singer2").value = txt; updatePreview(); }),
       chipButton(t("chip_title"), () => { $("title").value = txt; updatePreview(); })
     );
     box.appendChild(chip);
@@ -207,7 +217,8 @@ function renderFrameChips(texts) {
 }
 
 function updatePreview() {
-  const s = $("singer").value.trim() || "?";
+  const s2 = $("singer2").value.trim();
+  const s = ($("singer").value.trim() || "?") + (s2 ? "&" + s2 : "");
   const ti = $("title").value.trim() || "?";
   const l = $("language").value || "?";
   const c = $("category").value || "?";
@@ -242,6 +253,7 @@ async function analyze() {
       box.appendChild(div);
     }
     $("singer").value = data.singer_guess || "";
+    $("singer2").value = data.singer2_guess || "";
     $("title").value = data.title_guess || "";
     $("language").value = data.language_guess || "";
     $("player").src = URL.createObjectURL(picked);
@@ -312,6 +324,7 @@ async function ocrAt() {
 
 async function rename() {
   const singer = $("singer").value.trim();
+  const singer2 = $("singer2").value.trim();
   const title = $("title").value.trim();
   const language = $("language").value;
   const category = $("category").value;
@@ -324,7 +337,7 @@ async function rename() {
     const res = await fetch("/api/rename", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ file_id: state.fileId, singer, title, language, category })
+      body: JSON.stringify({ file_id: state.fileId, singer, singer2, title, language, category })
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || ("HTTP " + res.status));
@@ -347,6 +360,7 @@ function reset() {
   $("frameChips").innerHTML = "";
   $("warnings").innerHTML = "";
   $("singer").value = "";
+  $("singer2").value = "";
   $("title").value = "";
   buildSelects();
   $("preview").textContent = "—";
@@ -357,7 +371,7 @@ function reset() {
 
 function init() {
   buildSelects();
-  ["singer", "title"].forEach((id) => $(id).addEventListener("input", updatePreview));
+  ["singer", "singer2", "title"].forEach((id) => $(id).addEventListener("input", updatePreview));
   [$("language"), $("category")].forEach((el) => el.addEventListener("change", updatePreview));
   $("langToggle").addEventListener("click", () => setLang(lang === "en" ? "zh" : "en"));
   $("analyzeBtn").addEventListener("click", analyze);
