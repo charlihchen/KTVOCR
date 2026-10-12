@@ -260,5 +260,47 @@ async def rename(req: RenameRequest):
     return {"new_name": dst.name}
 
 
+class SongIdRequest(BaseModel):
+    file_id: str
+
+
+@app.post("/api/songid")
+async def songid(req: SongIdRequest):
+    """Opt-in Shazam-style recognition: fingerprint the audio, return title/artist.
+
+    Returns {"title", "singer", "singer2", "error"}. Never raises for
+    recognition misses — those come back as empty title/singer.
+    """
+    if not _FILE_ID_RE.match(req.file_id or ""):
+        raise HTTPException(status_code=400, detail="Invalid file_id")
+    src: Path | None = None
+    for p in UPLOAD_DIR.glob(f"{req.file_id}_*"):
+        if p.is_file() and p.suffix.lower() in ALLOWED_EXTS:
+            src = p
+            break
+    if src is None:
+        raise HTTPException(status_code=404, detail="Uploaded file not found (it may have been cleaned up)")
+
+    seg = UPLOAD_DIR / f"{req.file_id}_songid.wav"
+    try:
+        from songid import recognize_song
+
+        # Skip the intro (often silent/logos), fingerprint a 60 s slice.
+        if not extract_audio(src, seg, secs=60, start=15):
+            return {"title": "", "singer": "", "singer2": "", "error": "no_audio"}
+        res = recognize_song(seg)
+        if res.get("error"):
+            return {"title": "", "singer": "", "singer2": "", "error": res["error"]}
+        singer, singer2 = split_duet_singers(res.get("artist", ""))
+        return {
+            "title": res.get("title", ""),
+            "singer": singer,
+            "singer2": singer2,
+            "error": "",
+        }
+    finally:
+        seg.unlink(missing_ok=True)
+
+
 # Serve the UI last so /api/* routes take precedence.
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
