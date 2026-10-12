@@ -425,6 +425,26 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str]:
     return (title, singer)
 
 
+# Duet markers: "A feat. B", "A ft B", "A vs B", "A & B", "A、B", "A+B" ...
+_DUET_SPLIT_RE = re.compile(
+    r"\s*\b(?:feat|ft|featuring|vs)\b\.?\s*|\s*(?:\+|＋|&|、)\s*",
+    re.IGNORECASE,
+)
+
+
+def split_duet_singers(singer_text: str) -> tuple[str, str]:
+    """Split a duet singer string into (singer1, singer2).
+
+    Returns ``(text, "")`` when no duet marker is found.
+    """
+    parts = _DUET_SPLIT_RE.split((singer_text or "").strip(), maxsplit=1)
+    if len(parts) == 2:
+        a, b = _tidy_value(parts[0]), _tidy_value(parts[1])
+        if a and b:
+            return (a, b)
+    return ((singer_text or "").strip(), "")
+
+
 # ---------------------------------------------------------------------- audio
 
 def extract_frame_at(video_path: Path, seconds: float, out_path: Path) -> bool:
@@ -506,9 +526,15 @@ def sanitize(part: str) -> str:
     return s[:120]
 
 
-def build_filename(singer: str, title: str, language: str, category: str, ext: str) -> str:
-    """Build ``singer-title-language-category.ext`` from sanitized parts."""
-    parts = [sanitize(singer), sanitize(title), sanitize(language), sanitize(category)]
+def build_filename(
+    singer: str, title: str, language: str, category: str, ext: str, singer2: str = ""
+) -> str:
+    """Build ``singer-title-language-category.ext`` from sanitized parts.
+
+    Duets become ``singer1&singer2-title-language-category.ext``.
+    """
+    singer_part = f"{singer}&{singer2}" if (singer2 or "").strip() else singer
+    parts = [sanitize(singer_part), sanitize(title), sanitize(language), sanitize(category)]
     if not ext.startswith("."):
         ext = "." + ext
     return "-".join(parts) + ext
