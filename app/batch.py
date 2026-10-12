@@ -82,6 +82,9 @@ def preflight() -> int:
         print("  model folder and rerun to re-download cleanly:", file=sys.stderr)
         print("    macOS/Linux: rm -rf ~/.EasyOCR/model", file=sys.stderr)
         print(r"    Windows:     rmdir /s %USERPROFILE%\.EasyOCR\model", file=sys.stderr)
+        if "numpy" in (diag.get("detail") or "").lower():
+            print("  this looks like the NumPy 1.x/2.x binary clash; try:", file=sys.stderr)
+            print('    pip install "numpy<2"', file=sys.stderr)
     else:
         print(f"ocr engine ok: {diag.get('detail')}")
     try:
