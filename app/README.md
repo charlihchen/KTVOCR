@@ -120,6 +120,11 @@ Examples:
 - **OCR guesses need human confirmation.** Karaoke videos love decorative fonts,
   scrolling lyrics and watermarks — that is why every candidate chip has
   one-click assign buttons instead of auto-renaming.
+- The guesser ignores lyricist/composer credits (作詞/作曲), channel watermarks
+  and junk text, merges spacing variants ("江 南"/"江南"), downweights text
+  stuck on screen the whole clip, and prefers large text in the upper
+  two-thirds of the frame where title cards live (lyrics scroll at the
+  bottom). Labeled cards (`歌名：…` / `歌手：…`) always win when found.
 - If the title card appears after 30 s, re-run with a longer window
   (`--secs 60` in batch, or edit the `secs=30` calls in `main.py`).
 - The app **copies** rather than moves/renames in place, so a bad rename never
