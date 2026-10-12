@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import tempfile
 from math import log1p
 from pathlib import Path
 
@@ -91,7 +92,7 @@ def _bbox_area(bbox) -> float:
 
 # Lyricist/composer/production credits — never the performing singer.
 _CREDIT_RE = re.compile(
-    r"(作詞|作曲|編曲|作词|作曲|编曲|監製|监制|導演|导演|製作|制作|出品|發行|发行|版權|版权)"
+    r"(作詞|作曲|編曲|作词|作曲|编曲|词曲|詞曲|監製|监制|導演|导演|製作|制作|出品|發行|发行|版權|版权)"
 )
 # Channel logos / quality badges that repeat on every frame.
 _WATERMARK_WORDS = {
@@ -246,6 +247,61 @@ def ocr_frames(frame_paths: list[Path]) -> list[dict]:
         )
     ranked.sort(key=lambda r: r["score"], reverse=True)
     return ranked[:15]
+
+
+_ocr_diag_cache = None
+
+
+def ocr_diagnostics() -> dict:
+    """Self-test the OCR engine: load it, then OCR synthetic known text.
+
+    Returns {"ok": bool, "stage": "load"|"selftest", "detail": str}.
+    Result is cached per process. Never raises.
+    """
+    global _ocr_diag_cache
+    if _ocr_diag_cache is not None:
+        return _ocr_diag_cache
+    try:
+        reader = _get_ocr_reader()
+    except Exception as exc:
+        _ocr_diag_cache = {
+            "ok": False,
+            "stage": "load",
+            "detail": f"{type(exc).__name__}: {exc}"[:300],
+        }
+        return _ocr_diag_cache
+    try:
+        from PIL import Image, ImageDraw
+
+        img = Image.new("RGB", (480, 140), "black")
+        draw = ImageDraw.Draw(img)
+        draw.text((30, 35), "Test 123 ABC", fill="white")
+        tmp = Path(tempfile.gettempdir()) / "ktvocr_selftest.png"
+        img.save(tmp)
+        res = reader.readtext(str(tmp))
+        texts = [(t or "") for _, t, _ in res]
+        if any("Test" in t for t in texts):
+            _ocr_diag_cache = {
+                "ok": True,
+                "stage": "selftest",
+                "detail": "synthetic text detected",
+            }
+        else:
+            _ocr_diag_cache = {
+                "ok": False,
+                "stage": "selftest",
+                "detail": (
+                    "engine loaded but detected nothing on synthetic text "
+                    f"({len(texts)} boxes)"
+                ),
+            }
+    except Exception as exc:
+        _ocr_diag_cache = {
+            "ok": False,
+            "stage": "selftest",
+            "detail": f"{type(exc).__name__}: {exc}"[:300],
+        }
+    return _ocr_diag_cache
 
 
 # ------------------------------------------------------- title / singer guess
