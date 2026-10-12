@@ -46,7 +46,13 @@ const STR = {
     ocr_engine_hint: "If the engine failed to load, delete the folder %USERPROFILE%\\.EasyOCR\\model and restart the app to re-download the models.",
     frame_no_text: "No text found in this frame.",
     ocr_at_working: "Capturing frame…",
-    ocr_at_failed: "Could not capture/OCR that frame."
+    ocr_at_failed: "Could not capture/OCR that frame.",
+    songid: "🎵 Song ID",
+    songid_working: "Listening… (fingerprinting audio, needs internet)",
+    songid_found: "Recognized",
+    songid_none: "No match — Shazam didn't recognize this audio. (Karaoke re-recordings often don't match.)",
+    songid_error: "Song ID failed",
+    songid_need_install: "Song recognition needs the ShazamAPI package: pip install ShazamAPI"
   },
   zh: {
     app_title: "KTV OCR 改名工具",
@@ -89,7 +95,13 @@ const STR = {
     ocr_engine_hint: "若引擎載入失敗，請刪除 %USERPROFILE%\\.EasyOCR\\model 資料夾後重啟 App 重新下載模型。",
     frame_no_text: "此影格中找不到文字。",
     ocr_at_working: "擷取影格中…",
-    ocr_at_failed: "無法擷取/辨識該影格。"
+    ocr_at_failed: "無法擷取/辨識該影格。",
+    songid: "🎵 歌曲辨識",
+    songid_working: "辨識中…（音訊指紋比對，需連網）",
+    songid_found: "辨識結果",
+    songid_none: "比對不到 — Shazam 無法辨識這段音訊。（卡拉OK重錄版本通常比對不到。）",
+    songid_error: "歌曲辨識失敗",
+    songid_need_install: "歌曲辨識需要安裝 ShazamAPI：pip install ShazamAPI"
   }
 };
 
@@ -322,6 +334,40 @@ async function ocrAt() {
   }
 }
 
+async function songId() {
+  if (!state.fileId) return;
+  const btn = $("songIdBtn");
+  btn.disabled = true;
+  setStatus(t("songid_working"));
+  try {
+    const res = await fetch("/api/songid", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file_id: state.fileId })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || ("HTTP " + res.status));
+    if (data.error === "not_installed") {
+      setStatus(t("songid_need_install"), true);
+    } else if (data.error) {
+      setStatus(t("songid_error") + ": " + data.error, true);
+    } else if (data.title) {
+      $("title").value = data.title || "";
+      $("singer").value = data.singer || "";
+      $("singer2").value = data.singer2 || "";
+      updatePreview();
+      const who = [data.singer, data.singer2].filter(Boolean).join(" & ");
+      setStatus(t("songid_found") + ": " + data.title + (who ? " — " + who : ""));
+    } else {
+      setStatus(t("songid_none"));
+    }
+  } catch (e) {
+    setStatus(t("error") + ": " + e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function rename() {
   const singer = $("singer").value.trim();
   const singer2 = $("singer2").value.trim();
@@ -376,6 +422,7 @@ function init() {
   $("langToggle").addEventListener("click", () => setLang(lang === "en" ? "zh" : "en"));
   $("analyzeBtn").addEventListener("click", analyze);
   $("ocrAtBtn").addEventListener("click", ocrAt);
+  $("songIdBtn").addEventListener("click", songId);
   $("renameBtn").addEventListener("click", rename);
   $("nextBtn").addEventListener("click", reset);
 
