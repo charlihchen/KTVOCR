@@ -119,7 +119,22 @@ video {
   object-fit: cover;
   border-radius: 8px;
   border: 1px solid var(--border);
+  cursor: pointer;
 }
+.frames img:hover {
+  outline: 2px solid var(--accent);
+}
+.warnings {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #8a6d1f;
+  background: #2a2416;
+  color: #e8c872;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+.warnings:empty { display: none; }
+.warnings div + div { margin-top: 4px; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 10px; }
 .chip {
