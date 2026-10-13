@@ -384,13 +384,17 @@ def _tidy_value(v: str) -> str:
     return v.strip()
 
 
-def guess_title_singer(candidates: list[dict]) -> tuple[str, str]:
-    """Guess (title, singer) from ranked OCR candidates.
+def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
+    """Guess (title, singer, singer2) from ranked OCR candidates.
 
     1. Labeled lines (``歌名：X`` / ``歌手：Y``, whitespace-tolerant) win outright.
     2. Otherwise the title is the biggest text among the top-scoring
        candidates (karaoke title cards dominate the frame) and the singer is
-       the next strongest distinct text. Returns ("", "") when empty.
+       the next strongest distinct text.
+    3. Singer 2 is an unlabeled second name on the card (duet
+       "主唱：莊振凱" with "向蕙玲" on the next line): the strongest
+       name-like (2-6 chars, so lyric lines can't qualify) distinct text.
+       Returns ("", "", "") when empty.
     """
     title = singer = ""
     pool: list[tuple[str, str, dict]] = []  # (spaceless key, surface, cand)
@@ -436,12 +440,29 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str]:
                 if key != title_key and key != singer_key:
                     singer = _tidy_value(surface)
                     break
-    return (title, singer)
+    # Singer 2: unlabeled second name on the card (duet "主唱：莊振凱" with
+    # "向蕙玲" on the next line). Name-like only (2-6 chars) so a lyric line
+    # can never be picked as a singer.
+    singer2 = ""
+    if singer:
+        title_key, singer_key = _key_of(title), _key_of(singer)
+        by_score = sorted(pool, key=lambda e: e[2].get("score", 0), reverse=True)
+        for key, surface, _c in by_score[:8]:
+            if key in (title_key, singer_key):
+                continue
+            if 2 <= len(key) <= 6:
+                singer2 = _tidy_value(surface)
+                break
+    return (title, singer, singer2)
 
 
 # Duet markers: "A feat. B", "A ft B", "A vs B", "A & B", "A、B", "A+B" ...
+# The word markers use (?<![a-zA-Z]) instead of \b on the left: _tidy_value
+# strips spaces inside CJK text ("王菲 feat. 那英" -> "王菲feat.那英"), and
+# there is no \b between a CJK char and "f". Still won't match inside English
+# words ("defeat").
 _DUET_SPLIT_RE = re.compile(
-    r"\s*\b(?:feat|ft|featuring|vs)\b\.?\s*|\s*(?:\+|＋|&|、)\s*",
+    r"(?<![a-zA-Z])(?:feat|ft|featuring|vs)\b\.?\s*|\s*(?:\+|＋|&|、)\s*",
     re.IGNORECASE,
 )
 
