@@ -156,6 +156,14 @@ def _is_credit(t: str) -> bool:
     return bool(_CREDIT_RE.search(t))
 
 
+_LYRIC_PART_RE = re.compile(r"^(男|女)\s*[:：]")
+
+
+def _is_lyric_part(t: str) -> bool:
+    """Duet lyric-part marker (男:/女:) — a lyric line, never title/singer."""
+    return bool(_LYRIC_PART_RE.match(t))
+
+
 def _frame_size(fp: Path) -> tuple[int, int]:
     try:
         from PIL import Image
@@ -195,7 +203,7 @@ def _read_frame(fp: Path, img_h: int = 0) -> list[tuple[str, float, float, float
             continue
         for bbox, text, conf in results:
             t = _clean_text(text)
-            if not t or _is_junk(t) or _is_credit(t):
+            if not t or _is_junk(t) or _is_credit(t) or _is_lyric_part(t):
                 continue
             try:
                 c = float(conf)
@@ -227,12 +235,15 @@ def ocr_image(image_path: Path) -> list[dict]:
 def ocr_frames(frame_paths: list[Path]) -> list[dict]:
     """Run EasyOCR over frames and aggregate repeated text.
 
-    Texts are cleaned (《》 wrappers stripped), lyricist/composer credits,
-    watermarks and junk are dropped, and spacing variants ("江 南"/"江南")
-    are merged. Each text scores ``sum(conf * (1 + log1p(area)))`` with two
-    karaoke-specific adjustments: text stuck on screen for most of the clip
-    (logos) is downweighted, and text in the upper two-thirds of the frame
-    (where title cards live; lyrics scroll along the bottom) is upweighted.
+    Texts are cleaned (《》 wrappers stripped); lyricist/composer credits,
+    duet lyric-part markers (男:/女:), watermarks and junk are dropped; and
+    spacing variants ("江 南"/"江南") are merged. Each frame contributes at
+    most one score per text (the best reader's — the script models must not
+    multiply a score), and each text keeps only its 3 best frames, so a lyric
+    line visible for 20 frames can't outrank a title card visible for 5.
+    Persistent on-screen logos are downweighted, and text in the upper
+    two-thirds of the frame (where title cards live; lyrics scroll along the
+    bottom) is upweighted.
 
     Returns the top 15 as ``[{"text": ..., "score": ...}]`` sorted by score
     desc, or [] on any failure.
@@ -242,30 +253,33 @@ def ocr_frames(frame_paths: list[Path]) -> list[dict]:
     for fp in frame_paths:
         total += 1
         _, h = _frame_size(fp)
-        seen: set[str] = set()
+        best: dict[str, tuple[float, str, float, float]] = {}
         for t, conf, area, y in _read_frame(fp, h):
             key = re.sub(r"\s+", "", t)
+            try:
+                s = float(conf) * (1.0 + log1p(area))
+            except Exception:
+                s = 0.0
+            prev = best.get(key)
+            if prev is None or s > prev[0]:
+                best[key] = (s, t, area, y)
+        for key, (s, t, area, y) in best.items():
             d = agg.setdefault(
                 key,
-                {"text": t, "score": 0.0, "nframes": 0,
+                {"text": t, "scores": [], "nframes": 0,
                  "max_area": 0.0, "y_sum": 0.0},
             )
-            try:
-                d["score"] += float(conf) * (1.0 + log1p(area))
-            except Exception:
-                pass
-            if key not in seen:
-                seen.add(key)
-                d["nframes"] += 1
-                d["y_sum"] += y
+            d["scores"].append(s)
+            d["nframes"] += 1
+            d["y_sum"] += y
             if area > d["max_area"]:
                 d["max_area"] = area
                 d["text"] = t  # keep the surface form with the biggest box
 
     ranked = []
     for d in agg.values():
-        s = d["score"]
-        if d["nframes"] > max(8, 0.4 * total):
+        s = sum(sorted(d["scores"], reverse=True)[:3])
+        if d["nframes"] > max(10, 0.5 * total):
             s *= 0.25  # persistent overlay: watermark / logo
         y_avg = d["y_sum"] / max(1, d["nframes"])
         s *= 1.35 if y_avg <= 0.68 else 0.75  # title cards live up top
@@ -495,8 +509,8 @@ def detect_language(audio_path: Path) -> tuple[str, str]:
     """Detect the sung language with faster-whisper.
 
     Returns (label, note) e.g. ("國語", "whisper=zh"),
-    ("", "detection failed") when the language is unknown, or ("", "error")
-    when transcription itself fails.
+    ("", "detection failed") when the language is unknown, or
+    ("", "error: <ExceptionType>: <message>") when transcription itself fails.
     """
     try:
         model = _get_whisper_model()
@@ -508,8 +522,8 @@ def detect_language(audio_path: Path) -> tuple[str, str]:
         if label:
             return (label, f"whisper={code}")
         return ("", "detection failed")
-    except Exception:
-        return ("", "error")
+    except Exception as exc:
+        return ("", f"error: {type(exc).__name__}: {exc}"[:120])
 
 
 # ------------------------------------------------------------------- filename
