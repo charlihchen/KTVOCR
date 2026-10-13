@@ -117,7 +117,11 @@ language_final, category_final, new_name, status
 
 > Duets: when the singer guess contains `feat.` / `ft` / `vs` / `&` / `、`
 > / `+` (e.g. `王菲 feat. 那英`), it is split into `singer` + `singer2`
-> automatically, and the filename becomes `singer1&singer2-title-…`
+> automatically, and the filename becomes `singer1&singer2-title-…`.
+> Also, an unlabeled second name on the title card (e.g. `主唱：莊振凱`
+> with `向蕙玲` on the next line) is picked up as `singer2` — name-like
+> texts only (2–6 chars), so a lyric line can never land in the singer
+> fields.
 > (e.g. `王菲&那英-相約九八-國語-合唱.mkv`). The web UI has a second singer
 > field plus a per-chip "Singer 2" button for the same thing.
 
