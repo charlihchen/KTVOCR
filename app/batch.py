@@ -170,6 +170,10 @@ def cmd_scan(args: argparse.Namespace) -> int:
     tmp = Path(tempfile.gettempdir()) / "ktvocr_batch"
     tmp.mkdir(parents=True, exist_ok=True)
     out_csv.parent.mkdir(parents=True, exist_ok=True)
+    if args.debug:
+        # Fresh debug file per run (candidates append per video below).
+        (out_csv.parent / (out_csv.stem + ".debug.json")).write_text(
+            "", encoding="utf-8")
 
     with out_csv.open("w", newline="", encoding="utf-8-sig") as fh:
         writer = csv.DictWriter(fh, fieldnames=COLUMNS)
@@ -183,16 +187,39 @@ def cmd_scan(args: argparse.Namespace) -> int:
                 frames = extract_frames(vf, frame_dir, fps=1, secs=args.secs)
                 candidates = ocr_frames(frames)
                 if args.debug:
+                    dbg = [
+                        {
+                            "text": c["text"],
+                            "score": round(c["score"], 1),
+                            "nframes": c.get("nframes"),
+                            "first_seen": c.get("first_seen"),
+                            "y_avg": round(c.get("y_avg", -1), 3),
+                            "overlay": bool(c.get("overlay")),
+                            "early": bool(c.get("early")),
+                        }
+                        for c in candidates[:15]
+                    ]
+                    dbg_path = out_csv.parent / (out_csv.stem + ".debug.json")
+                    try:
+                        import json
+
+                        with open(dbg_path, "a", encoding="utf-8") as df:
+                            df.write(json.dumps(
+                                {"video": str(vf), "candidates": dbg},
+                                ensure_ascii=False) + "\n")
+                    except Exception:
+                        pass
                     print("  candidates:")
-                    for c in candidates[:10]:
+                    for c in dbg[:10]:
                         flags = []
-                        if c.get("overlay"):
+                        if c["overlay"]:
                             flags.append("overlay")
-                        if c.get("early"):
+                        if c["early"]:
                             flags.append("early")
-                        print(f"    {c['score']:8.1f} f{c.get('first_seen', '?'):>3}"
-                              f" n={c.get('nframes', '?'):>2} {'+'.join(flags):<12}"
-                              f" {c['text']}")
+                        print(f"    {c['score']:8.1f} f{c['first_seen']:>3}"
+                              f" n={c['nframes']:>2} y={c['y_avg']:.2f}"
+                              f" {'+'.join(flags):<12} {c['text']}")
+                    print(f"  (full list appended to {dbg_path.name})")
                 title_guess, singer_guess, singer2_guess = guess_title_singer(candidates)
                 sg1, sg2 = split_duet_singers(singer_guess)
                 if sg2:  # explicit "A feat. B" markers win over the name fallback
