@@ -95,6 +95,8 @@ python batch.py check
 
 # 1) scan everything, write machine guesses for human review
 python batch.py scan /path/to/videos -o guesses.csv --secs 30
+#    add --debug to print the top OCR candidates per video when a guess
+#    looks wrong (shows what the OCR actually saw: text, score, frames)
 
 # 2) open guesses.csv in Excel:
 #    - fix the *_final columns (prefilled with the guesses)
@@ -159,12 +161,16 @@ Examples:
   variants ("江 南"/"江南"). Each frame contributes at most one score per
   text (the best script model's — four readers must not multiply a score),
   each text keeps only its 3 best frames (so a lyric visible for 20 frames
-  can't outrank a title card visible for 5), persistent logos are downweighted,
-  and large text in the upper two-thirds of the frame is preferred (lyrics
-  scroll along the bottom). Labeled cards (`歌名：…` / `歌手：…`,
-  whitespace-tolerant) always win when found; otherwise the title is the
-  biggest text among the top candidates and the singer the next strongest —
-  bare labels like `演唱：` are never used as guesses.
+  can't outrank a title card visible for 5). Text on screen for >80% of the
+  scan is a persistent logo: it is downweighted and never picked as
+  title/singer. In a frame showing a `男:`/`女:` lyric marker, bottom-region
+  text is lyric continuation, not title/singer. Large text in the upper
+  two-thirds of the frame is preferred (lyrics scroll along the bottom), and
+  title/singer fallbacks prefer text first seen early (cards live at the
+  start). Labeled cards (`歌名：…` / `歌手：…`, whitespace-tolerant) always
+  win when found; otherwise the title is the biggest text among the top
+  candidates and the singer the next strongest — bare labels like `演唱：`
+  are never used as guesses.
 - If the title card appears after 30 s, re-run with a longer window
   (`--secs 60` in batch, or edit the `secs=30` calls in `main.py`).
 - The app **copies** rather than moves/renames in place, so a bad rename never
