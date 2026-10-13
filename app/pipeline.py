@@ -114,9 +114,35 @@ def _bbox_area(bbox) -> float:
 # ------------------------------------------------------- text classification
 
 # Lyricist/composer/production credits — never the performing singer.
-_CREDIT_RE = re.compile(
-    r"(作詞|作曲|編曲|作词|作曲|编曲|词曲|詞曲|監製|监制|導演|导演|製作|制作|出品|發行|发行|版權|版权)"
+def _ws_word(word: str) -> str:
+    """Render a CJK word whitespace-tolerant (OCR reads 作詞 as 作 詞)."""
+    return r"\s*".join(word)
+
+
+_CREDIT_WORDS = [
+    "作詞", "作曲", "編曲", "作词", "编曲", "词曲", "詞曲",
+    "監製", "监制", "導演", "导演", "製作", "制作",
+    "出品", "發行", "发行", "版權", "版权",
+]
+_CREDIT_RE = re.compile("(" + "|".join(_ws_word(w) for w in _CREDIT_WORDS) + ")")
+# "作詞：石國人" -> the credited name, so it's never picked as the singer.
+# The value pattern tolerates OCR noise ("作 曲6石國人" — colon misread).
+_CREDIT_VAL_RE = re.compile(
+    "(?:" + "|".join(_ws_word(w) for w in _CREDIT_WORDS) + r")\s*[:：]?\s*(.+)$"
 )
+_CJK_RUN_RE = re.compile(r"[\u4e00-\u9fff]{2,}")
+
+
+def _credit_names(surface: str) -> set[str]:
+    """Names credited on the card (作詞：石國人 -> {石國人})."""
+    names: set[str] = set()
+    m = _CREDIT_VAL_RE.search(surface)
+    if m:
+        # Trailing CJK run survives colon misreads ("作 曲6石國人").
+        m2 = _CJK_RUN_RE.search(m.group(1))
+        if m2:
+            names.add(re.sub(r"\s+", "", m2.group(0)))
+    return names
 # Channel logos / quality badges that repeat on every frame.
 _WATERMARK_WORDS = {
     "ktv", "k歌", "伴奏", "原版", "高清", "超清", "蓝光", "藍光",
@@ -415,13 +441,17 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
        and the singer is the next strongest distinct text.
     3. Singer 2 is an unlabeled second name on the card (duet
        "主唱：莊振凱" with "向蕙玲" on the next line): the strongest
-       name-like (2-6 chars, so lyric lines can't qualify) distinct text.
-    Persistent overlays (channel logos: visible in >80% of frames) are never
-    picked by the fallbacks. Returns ("", "", "") when empty.
+       name-like (2-6 chars), early, distinct text in the singer zone.
+    Credited names (作詞/作曲：…) are never picked as singers. Fallbacks
+    never take persistent overlays (channel logos), and singers must sit
+    near/below the title — never far above it where logos live. A wrong
+    guess is worse than an empty one, so the fallbacks stay empty when
+    nothing qualifies. Returns ("", "", "") when empty.
     """
     title = singer = ""
     pool: list[tuple[str, str, dict]] = []  # (spaceless key, surface, cand)
     seen: set[str] = set()
+    credit_names: set[str] = set()
     for c in candidates or []:
         surface = (c.get("text") or "").strip()
         if not surface:
@@ -431,6 +461,8 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
             continue
         seen.add(key)
         if _is_credit(surface):
+            # The credited person (作詞：石國人) is not the singer.
+            credit_names |= _credit_names(surface)
             continue
         m = _LABEL_RE_WS.match(surface)
         if m:
@@ -453,12 +485,22 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
         # Fallback picks never take persistent overlays (channel logos).
         return [e for e in pool_entries if not e[2].get("overlay")]
 
-    def _no_top_strip(pool_entries):
-        # Singers live on the title-card body, never in the top strip where
-        # channel logos sit. Falls back to the full list when everything is
-        # up there (so a guess is still made).
-        kept = [e for e in pool_entries if e[2].get("y_avg", 0.5) >= 0.25]
-        return kept or pool_entries
+    def _title_y():
+        # Vertical position of the title on the card, if known.
+        if not title:
+            return None
+        tkey = _key_of(title)
+        for key, _s, c in pool:
+            if key == tkey and c.get("y_avg") is not None:
+                return c["y_avg"]
+        return None
+
+    def _singer_zone(pool_entries, ty):
+        # On a title card the singer sits near/below the title, never far
+        # above it where channel logos live. Strict: a logo or lyric is
+        # worse than leaving the guess empty.
+        min_y = (ty - 0.1) if ty is not None else 0.35
+        return [e for e in pool_entries if e[2].get("y_avg", 0.5) >= min_y]
 
     if not title or not singer:
         ranked = sorted(_usable(pool), key=lambda e: e[2].get("score", 0),
@@ -474,28 +516,31 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
             title = _tidy_value(pick[1])
             title_key = _key_of(title)
         if not singer:
-            cands = _no_top_strip([e for e in ranked if e[2].get("early")])
-            if not cands:
-                cands = _no_top_strip(ranked)
-            for key, surface, _c in cands:
-                if key != title_key and key != singer_key:
-                    singer = _tidy_value(surface)
-                    break
+            ty = _title_y()
+            cands = [e for e in ranked
+                     if e[0] != title_key and e[0] not in credit_names]
+            early = [e for e in cands if e[2].get("early")]
+            zone = _singer_zone(early or cands, ty)
+            if zone:
+                singer = _tidy_value(zone[0][1])
     # Singer 2: unlabeled second name on the card (duet "主唱：莊振凱" with
-    # "向蕙玲" on the next line). Name-like only (2-6 chars) so a lyric line
-    # can never be picked as a singer; overlays (logos) are excluded too.
+    # "向蕙玲" on the next line). Name-like only (2-6 chars), on the card
+    # (early), in the singer zone, never a credited name — so a lyric line
+    # or logo can never be picked. Empty when nothing qualifies.
     singer2 = ""
     if singer:
+        ty = _title_y()
         title_key, singer_key = _key_of(title), _key_of(singer)
-        by_score = _no_top_strip(
-            sorted(_usable(pool), key=lambda e: e[2].get("score", 0),
-                   reverse=True))
-        for key, surface, _c in by_score[:8]:
-            if key in (title_key, singer_key):
-                continue
-            if 2 <= len(key) <= 6:
-                singer2 = _tidy_value(surface)
-                break
+        by_score = sorted(_usable(pool), key=lambda e: e[2].get("score", 0),
+                          reverse=True)
+        cands = [e for e in by_score
+                 if e[0] not in (title_key, singer_key)
+                 and e[0] not in credit_names
+                 and 2 <= len(e[0]) <= 6
+                 and e[2].get("early")]
+        zone = _singer_zone(cands, ty)
+        if zone:
+            singer2 = _tidy_value(zone[0][1])
     return (title, singer, singer2)
 
 
