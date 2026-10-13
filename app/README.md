@@ -167,11 +167,14 @@ Examples:
   text is lyric continuation, not title/singer. Large text in the upper
   two-thirds of the frame is preferred (lyrics scroll along the bottom), and
   title/singer fallbacks prefer text first seen early (cards live at the
-  start). Singers are never picked from the top strip of the frame (channel
-  logos live there). Labeled cards (`歌名：…` / `歌手：…`,
-  whitespace-tolerant) always win when found; otherwise the title is the
-  biggest text among the top candidates and the singer the next strongest —
-  bare labels like `演唱：` are never used as guesses.
+  start). Singers must sit near/below the title — never far above it where
+  channel logos live. Names credited for lyrics/music (`作詞：…`, whitespace-
+  tolerant) are never picked as singers. Labeled cards (`歌名：…` /
+  `歌手：…`, whitespace-tolerant) always win when found; otherwise the title
+  is the biggest text among the top candidates and the singer the next
+  strongest — bare labels like `演唱：` are never used as guesses. A wrong
+  guess is worse than an empty one, so fallbacks stay empty when nothing
+  qualifies.
 - **Language:** Whisper's `zh` cannot tell Mandarin from Taiwanese /
   Cantonese / Hakka. In batch mode, when the video's own folder names name
   the language (e.g. `…/台語/xxx.mkv`), that disambiguates `zh` (or a failed
