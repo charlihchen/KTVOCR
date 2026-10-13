@@ -132,8 +132,10 @@ def cmd_scan(args: argparse.Namespace) -> int:
             try:
                 frame_dir = tmp / f"frames_{i}"
                 frames = extract_frames(vf, frame_dir, fps=1, secs=args.secs)
-                title_guess, singer_guess = guess_title_singer(ocr_frames(frames))
-                singer_guess, singer2_guess = split_duet_singers(singer_guess)
+                title_guess, singer_guess, singer2_guess = guess_title_singer(ocr_frames(frames))
+                sg1, sg2 = split_duet_singers(singer_guess)
+                if sg2:  # explicit "A feat. B" markers win over the name fallback
+                    singer_guess, singer2_guess = sg1, sg2
             except Exception as exc:
                 print(f"  ocr failed: {exc}")
             finally:
