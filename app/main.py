@@ -105,8 +105,10 @@ async def analyze(video: UploadFile = File(...)):
     # 3) title / singer guesses --------------------------------------------
     title_guess, singer_guess, singer2_guess = "", "", ""
     try:
-        title_guess, singer_guess = guess_title_singer(candidates)
-        singer_guess, singer2_guess = split_duet_singers(singer_guess)
+        title_guess, singer_guess, singer2_guess = guess_title_singer(candidates)
+        sg1, sg2 = split_duet_singers(singer_guess)
+        if sg2:  # explicit "A feat. B" markers win over the name fallback
+            singer_guess, singer2_guess = sg1, sg2
     except Exception:
         title_guess, singer_guess, singer2_guess = "", "", ""
 
