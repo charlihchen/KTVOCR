@@ -127,6 +127,31 @@ def preflight() -> int:
     return 0 if ok else 2
 
 
+# Folder names that reveal the language, e.g. /Volumes/ktv/111/台語/xxx.mkv.
+# Used to disambiguate Whisper's "zh" (Mandarin vs Taiwanese/Cantonese/Hakka).
+_PATH_LANGS = {
+    "台語": "台語", "台灣": "台語",
+    "國語": "國語", "華語": "國語",
+    "粵語": "粵語", "廣東": "粵語",
+    "客語": "客語", "客家": "客語",
+    "日語": "日語", "日本": "日語",
+    "韓語": "韓語", "韓國": "韓語",
+    "英語": "英語", "英文": "英語",
+}
+
+
+def _path_language_hint(video_path: Path) -> str:
+    """Language from the file's own folder names, "" when none match.
+
+    Deepest matching folder wins (most specific).
+    """
+    for part in reversed(video_path.parts):
+        for key, label in _PATH_LANGS.items():
+            if key in part:
+                return label
+    return ""
+
+
 def cmd_scan(args: argparse.Namespace) -> int:
     video_dir = Path(args.video_dir)
     out_csv = Path(args.o)
@@ -200,6 +225,14 @@ def cmd_scan(args: argparse.Namespace) -> int:
                 audio_path.unlink(missing_ok=True)
             except Exception as exc:
                 print(f"  audio failed: {exc}")
+            # Whisper's "zh" can't tell Mandarin from Taiwanese/Cantonese/
+            # Hakka. When the user's own folder organization names the
+            # language (e.g. .../台語/xxx.mkv), it disambiguates.
+            hint = _path_language_hint(vf)
+            if hint and (not language_guess or language_guess == "國語"):
+                language_note = f"path={hint}" + (
+                    f"; {language_note}" if language_note else "")
+                language_guess = hint
             # Song-ID hits outrank OCR guesses for the prefilled *_final columns;
             # the *_guess columns keep both sources visible for review.
             fin_title, fin_singer, fin_singer2 = title_guess, singer_guess, singer2_guess
