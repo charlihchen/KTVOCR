@@ -167,10 +167,17 @@ Examples:
   text is lyric continuation, not title/singer. Large text in the upper
   two-thirds of the frame is preferred (lyrics scroll along the bottom), and
   title/singer fallbacks prefer text first seen early (cards live at the
-  start). Labeled cards (`歌名：…` / `歌手：…`, whitespace-tolerant) always
-  win when found; otherwise the title is the biggest text among the top
-  candidates and the singer the next strongest — bare labels like `演唱：`
-  are never used as guesses.
+  start). Singers are never picked from the top strip of the frame (channel
+  logos live there). Labeled cards (`歌名：…` / `歌手：…`,
+  whitespace-tolerant) always win when found; otherwise the title is the
+  biggest text among the top candidates and the singer the next strongest —
+  bare labels like `演唱：` are never used as guesses.
+- **Language:** Whisper's `zh` cannot tell Mandarin from Taiwanese /
+  Cantonese / Hakka. In batch mode, when the video's own folder names name
+  the language (e.g. `…/台語/xxx.mkv`), that disambiguates `zh` (or a failed
+  detection) — the `language_note` records the source (`path=台語;
+  whisper=zh`). Confident non-Chinese detections (日語/韓語/英語) are never
+  overridden.
 - If the title card appears after 30 s, re-run with a longer window
   (`--secs 60` in batch, or edit the `secs=30` calls in `main.py`).
 - The app **copies** rather than moves/renames in place, so a bad rename never
