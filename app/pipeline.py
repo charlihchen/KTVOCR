@@ -309,6 +309,7 @@ def ocr_frames(frame_paths: list[Path]) -> list[dict]:
                 "first_seen": d["first_seen"],
                 "early": d["first_seen"] < total / 3.0,
                 "overlay": overlay,
+                "y_avg": y_avg,
             }
         )
     ranked.sort(key=lambda r: r["score"], reverse=True)
@@ -452,6 +453,13 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
         # Fallback picks never take persistent overlays (channel logos).
         return [e for e in pool_entries if not e[2].get("overlay")]
 
+    def _no_top_strip(pool_entries):
+        # Singers live on the title-card body, never in the top strip where
+        # channel logos sit. Falls back to the full list when everything is
+        # up there (so a guess is still made).
+        kept = [e for e in pool_entries if e[2].get("y_avg", 0.5) >= 0.25]
+        return kept or pool_entries
+
     if not title or not singer:
         ranked = sorted(_usable(pool), key=lambda e: e[2].get("score", 0),
                         reverse=True)
@@ -466,7 +474,9 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
             title = _tidy_value(pick[1])
             title_key = _key_of(title)
         if not singer:
-            cands = [e for e in ranked if e[2].get("early")] or ranked
+            cands = _no_top_strip([e for e in ranked if e[2].get("early")])
+            if not cands:
+                cands = _no_top_strip(ranked)
             for key, surface, _c in cands:
                 if key != title_key and key != singer_key:
                     singer = _tidy_value(surface)
@@ -477,8 +487,9 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
     singer2 = ""
     if singer:
         title_key, singer_key = _key_of(title), _key_of(singer)
-        by_score = sorted(_usable(pool), key=lambda e: e[2].get("score", 0),
-                          reverse=True)
+        by_score = _no_top_strip(
+            sorted(_usable(pool), key=lambda e: e[2].get("score", 0),
+                   reverse=True))
         for key, surface, _c in by_score[:8]:
             if key in (title_key, singer_key):
                 continue
