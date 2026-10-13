@@ -8,6 +8,12 @@ python-multipart
 numpy<2
 easyocr
 faster-whisper
+# PyAV 19 removed the `metadata_errors` kwarg of av.open() that
+# faster-whisper 1.2.1 still passes in decode_audio() — with av>=19 EVERY
+# transcription fails with "TypeError: open() got an unexpected keyword
+# argument 'metadata_errors'". Keep av below 19 until faster-whisper ships
+# a release that supports it.
+av<19
 # Opt-in Shazam-style song recognition (unofficial API, needs internet).
 # The app works without it; the Song ID button / --songid flag will tell you
 # if it's missing.
