@@ -194,6 +194,7 @@ def _read_frame(fp: Path, img_h: int = 0) -> list[tuple[str, float, float, float
     except Exception:
         return []
     out: list[tuple[str, float, float, float]] = []
+    lyric_frame = False
     for reader in readers.values():
         try:
             results = reader.recognize(
@@ -203,7 +204,13 @@ def _read_frame(fp: Path, img_h: int = 0) -> list[tuple[str, float, float, float
             continue
         for bbox, text, conf in results:
             t = _clean_text(text)
-            if not t or _is_junk(t) or _is_credit(t) or _is_lyric_part(t):
+            if _is_lyric_part(t):
+                # Duet lyric-part marker (男:/女:): this frame is showing
+                # lyrics, not the title card. The marker itself is dropped
+                # below; its continuation lines are dropped afterwards.
+                lyric_frame = True
+                continue
+            if not t or _is_junk(t) or _is_credit(t):
                 continue
             try:
                 c = float(conf)
@@ -218,6 +225,10 @@ def _read_frame(fp: Path, img_h: int = 0) -> list[tuple[str, float, float, float
                 except Exception:
                     pass
             out.append((t, c, area, y))
+    if lyric_frame:
+        # In a lyric frame the bottom text is lyric lines (e.g. the
+        # continuation under "女：…"), never title/singer.
+        out = [(t, c, a, y) for (t, c, a, y) in out if y <= 0.68]
     return out
 
 
@@ -246,11 +257,16 @@ def ocr_frames(frame_paths: list[Path]) -> list[dict]:
     bottom) is upweighted.
 
     Returns the top 15 as ``[{"text": ..., "score": ...}]`` sorted by score
-    desc, or [] on any failure.
+    desc, or [] on any failure. Each entry also carries ``nframes``,
+    ``max_area``, ``first_seen`` (0-based frame index), ``early`` (first seen
+    in the first third of the scan — karaoke title cards live at the start)
+    and ``overlay`` (visible in >80% of frames: a persistent logo, never
+    title/singer content).
     """
     agg: dict[str, dict] = {}
     total = 0
     for fp in frame_paths:
+        idx = total
         total += 1
         _, h = _frame_size(fp)
         best: dict[str, tuple[float, str, float, float]] = {}
@@ -267,7 +283,7 @@ def ocr_frames(frame_paths: list[Path]) -> list[dict]:
             d = agg.setdefault(
                 key,
                 {"text": t, "scores": [], "nframes": 0,
-                 "max_area": 0.0, "y_sum": 0.0},
+                 "max_area": 0.0, "y_sum": 0.0, "first_seen": idx},
             )
             d["scores"].append(s)
             d["nframes"] += 1
@@ -279,7 +295,8 @@ def ocr_frames(frame_paths: list[Path]) -> list[dict]:
     ranked = []
     for d in agg.values():
         s = sum(sorted(d["scores"], reverse=True)[:3])
-        if d["nframes"] > max(10, 0.5 * total):
+        overlay = d["nframes"] > max(10, 0.8 * total)
+        if overlay:
             s *= 0.25  # persistent overlay: watermark / logo
         y_avg = d["y_sum"] / max(1, d["nframes"])
         s *= 1.35 if y_avg <= 0.68 else 0.75  # title cards live up top
@@ -289,6 +306,9 @@ def ocr_frames(frame_paths: list[Path]) -> list[dict]:
                 "score": s,
                 "nframes": d["nframes"],
                 "max_area": d["max_area"],
+                "first_seen": d["first_seen"],
+                "early": d["first_seen"] < total / 3.0,
+                "overlay": overlay,
             }
         )
     ranked.sort(key=lambda r: r["score"], reverse=True)
@@ -389,12 +409,14 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
 
     1. Labeled lines (``歌名：X`` / ``歌手：Y``, whitespace-tolerant) win outright.
     2. Otherwise the title is the biggest text among the top-scoring
-       candidates (karaoke title cards dominate the frame) and the singer is
-       the next strongest distinct text.
+       candidates (karaoke title cards dominate the frame), preferring text
+       first seen early (title cards live at the start; lyrics come later),
+       and the singer is the next strongest distinct text.
     3. Singer 2 is an unlabeled second name on the card (duet
        "主唱：莊振凱" with "向蕙玲" on the next line): the strongest
        name-like (2-6 chars, so lyric lines can't qualify) distinct text.
-       Returns ("", "", "") when empty.
+    Persistent overlays (channel logos: visible in >80% of frames) are never
+    picked by the fallbacks. Returns ("", "", "") when empty.
     """
     title = singer = ""
     pool: list[tuple[str, str, dict]] = []  # (spaceless key, surface, cand)
@@ -426,27 +448,37 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
     def _key_of(v: str) -> str:
         return re.sub(r"\s+", "", v)
 
+    def _usable(pool_entries):
+        # Fallback picks never take persistent overlays (channel logos).
+        return [e for e in pool_entries if not e[2].get("overlay")]
+
     if not title or not singer:
-        ranked = sorted(pool, key=lambda e: e[2].get("score", 0), reverse=True)
+        ranked = sorted(_usable(pool), key=lambda e: e[2].get("score", 0),
+                        reverse=True)
         title_key, singer_key = _key_of(title), _key_of(singer)
         if not title and ranked:
             # The song title is the biggest text on a karaoke title card.
+            # Prefer text first seen early: cards live at the start, lyrics
+            # come later.
             top = ranked[:8]
-            pick = max(top, key=lambda e: e[2].get("max_area", 0))
+            early = [e for e in top if e[2].get("early")]
+            pick = max(early or top, key=lambda e: e[2].get("max_area", 0))
             title = _tidy_value(pick[1])
             title_key = _key_of(title)
         if not singer:
-            for key, surface, _c in ranked:
+            cands = [e for e in ranked if e[2].get("early")] or ranked
+            for key, surface, _c in cands:
                 if key != title_key and key != singer_key:
                     singer = _tidy_value(surface)
                     break
     # Singer 2: unlabeled second name on the card (duet "主唱：莊振凱" with
     # "向蕙玲" on the next line). Name-like only (2-6 chars) so a lyric line
-    # can never be picked as a singer.
+    # can never be picked as a singer; overlays (logos) are excluded too.
     singer2 = ""
     if singer:
         title_key, singer_key = _key_of(title), _key_of(singer)
-        by_score = sorted(pool, key=lambda e: e[2].get("score", 0), reverse=True)
+        by_score = sorted(_usable(pool), key=lambda e: e[2].get("score", 0),
+                          reverse=True)
         for key, surface, _c in by_score[:8]:
             if key in (title_key, singer_key):
                 continue
