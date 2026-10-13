@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import csv
 import locale
+import os
 import shutil
 import sys
 import tempfile
@@ -95,11 +96,34 @@ def preflight() -> int:
         print(f"ocr engine ok: {diag.get('detail')}")
     try:
         import faster_whisper  # noqa: F401
+        from faster_whisper.audio import decode_audio
 
+        # Decode 1s of silence: catches the av>=19 incompatibility
+        # ("open() got an unexpected keyword argument 'metadata_errors'")
+        # which import alone does not reveal.
+        import tempfile
+        import wave
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
+            probe = tf.name
+        try:
+            with wave.open(probe, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(16000)
+                wf.writeframes(b"\x00" * 16000 * 2)
+            decode_audio(probe)
+        finally:
+            os.unlink(probe)
         print("whisper ok: language detection available")
-    except Exception:
+    except ImportError:
         print("warning: faster-whisper not installed; language_guess will stay empty")
         print("  fix: pip install -r requirements.txt")
+    except Exception as exc:
+        ok = False
+        print(f"whisper BROKEN: {type(exc).__name__}: {exc}", file=sys.stderr)
+        print('  fix: pip install "av<19"   (PyAV 19 breaks faster-whisper 1.2.1)',
+              file=sys.stderr)
     return 0 if ok else 2
 
 
@@ -132,7 +156,19 @@ def cmd_scan(args: argparse.Namespace) -> int:
             try:
                 frame_dir = tmp / f"frames_{i}"
                 frames = extract_frames(vf, frame_dir, fps=1, secs=args.secs)
-                title_guess, singer_guess, singer2_guess = guess_title_singer(ocr_frames(frames))
+                candidates = ocr_frames(frames)
+                if args.debug:
+                    print("  candidates:")
+                    for c in candidates[:10]:
+                        flags = []
+                        if c.get("overlay"):
+                            flags.append("overlay")
+                        if c.get("early"):
+                            flags.append("early")
+                        print(f"    {c['score']:8.1f} f{c.get('first_seen', '?'):>3}"
+                              f" n={c.get('nframes', '?'):>2} {'+'.join(flags):<12}"
+                              f" {c['text']}")
+                title_guess, singer_guess, singer2_guess = guess_title_singer(candidates)
                 sg1, sg2 = split_duet_singers(singer_guess)
                 if sg2:  # explicit "A feat. B" markers win over the name fallback
                     singer_guess, singer2_guess = sg1, sg2
@@ -279,6 +315,12 @@ def main() -> int:
         action="store_true",
         help="also fingerprint audio via Shazam (unofficial API, needs internet; "
         "best-effort — karaoke re-recordings often don't match)",
+    )
+    s.add_argument(
+        "--debug",
+        action="store_true",
+        help="print the top OCR candidates per video (text, score, frames, "
+        "overlay/early flags) to diagnose bad guesses",
     )
 
     a = sub.add_parser("apply", help="copy/rename files listed in a reviewed guesses CSV")
