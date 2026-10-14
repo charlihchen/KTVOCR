@@ -1,5 +1,8 @@
 # First run downloads the EasyOCR + faster-whisper models (~1-2 GB).
 # ffmpeg must be installed on the system and available on PATH.
+# Python 3.11 or 3.12 is required: the ML stack (torch, easyocr, numpy)
+# has no prebuilt wheels for newer Pythons, and pip would try (and fail)
+# to compile numpy from source. On Windows use the `py -3.11` launcher.
 # numpy is pinned below 2.x: EasyOCR pulls in scipy builds compiled against
 # NumPy 1.x, which crash on import under NumPy 2 (common in conda envs).
 fastapi
