@@ -438,7 +438,9 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
     2. Otherwise the title is the biggest text among the top-scoring
        candidates (karaoke title cards dominate the frame), preferring text
        first seen early (title cards live at the start; lyrics come later),
-       and the singer is the next strongest distinct text.
+       and the singer is the distinct text nearest below the title
+       (singers sit right under the title; credited names sit further
+       down).
     3. Singer 2 is an unlabeled second name on the card (duet
        "主唱：莊振凱" with "向蕙玲" on the next line): the strongest
        name-like (2-6 chars), early, distinct text in the singer zone.
@@ -522,6 +524,13 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
             early = [e for e in cands if e[2].get("early")]
             zone = _singer_zone(early or cands, ty)
             if zone:
+                # Nearest below the title first: the singer sits right
+                # under the title; credited names sit further down.
+                # Score breaks ties.
+                ty2 = ty if ty is not None else 0.5
+                zone.sort(key=lambda e: (
+                    max(0.0, e[2].get("y_avg", 0.5) - ty2),
+                    -e[2].get("score", 0)))
                 singer = _tidy_value(zone[0][1])
     # Singer 2: unlabeled second name on the card (duet "主唱：莊振凱" with
     # "向蕙玲" on the next line). Name-like only (2-6 chars), on the card
