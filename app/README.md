@@ -58,15 +58,17 @@ python3 batch.py check     # verifies ffmpeg + OCR engine + whisper
 winget install Gyan.FFmpeg
 
 cd ktvocr\app
-py -m pip install -r requirements.txt
-py -m uvicorn main:app --host 127.0.0.1 --port 8000
+py -3.11 -m pip install -r requirements.txt
+py -3.11 -m uvicorn main:app --host 127.0.0.1 --port 8000
 :: open http://127.0.0.1:8000 in your browser
 ```
 
 If `uvicorn` is "not recognized", you skipped the install step or your
-terminal doesn't see Python's Scripts folder — the `py -m` prefix above
-bypasses the PATH problem entirely. (Use `python` instead of `py` if that
-is what works on your machine.)
+terminal doesn't see Python's Scripts folder — the `py -3.11 -m` prefix above
+bypasses the PATH problem entirely — and pins Python 3.11, because bare `py`
+picks Python 3.15 on machines with both installed, and numpy 1.26.4 has no
+prebuilt wheel for 3.15, so pip tries (and fails) to compile it from source.
+(Use `python` instead of `py` if that is what works on your machine.)
 
 ## Web UI (one video at a time)
 
