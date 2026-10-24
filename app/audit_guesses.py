@@ -31,6 +31,14 @@ def pct(n: int, d: int) -> str:
 
 
 def main() -> None:
+    # Windows CMD defaults stdout to cp1252, which cannot print the CJK
+    # titles/singers in the report (UnicodeEncodeError). Force UTF-8 so
+    # the script works with a plain `python audit_guesses.py ...` call.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     if len(sys.argv) != 2:
         print("usage: python audit_guesses.py guesses.csv", file=sys.stderr)
         sys.exit(2)
