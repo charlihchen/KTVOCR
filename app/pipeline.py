@@ -10,8 +10,15 @@ from __future__ import annotations
 import re
 import subprocess
 import tempfile
+import warnings
 from math import log1p
 from pathlib import Path
+
+# Torch's DataLoader warns "'pin_memory' argument is set as true but no
+# accelerator is found" on CPU-only machines. EasyOCR sets pin_memory
+# internally (we never pass it), and it only matters for GPU transfers,
+# so on CPU it is harmless noise. Silence just this warning, not others.
+warnings.filterwarnings("ignore", message=".*pin_memory.*", category=UserWarning)
 
 # ------------------------------------------------------------------ constants
 
