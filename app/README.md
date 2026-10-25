@@ -75,6 +75,7 @@ prebuilt wheel for 3.15, so pip tries (and fails) to compile it from source.
 ```bash
 cd ktvocr/app
 uvicorn main:app --host 0.0.0.0 --port 8000
+# py -3.11 -m uvicorn main:app --host 0.0.0.0 --port 8000
 # open http://localhost:8000
 ```
 
