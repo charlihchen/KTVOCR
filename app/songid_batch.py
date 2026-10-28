@@ -18,6 +18,10 @@ Resume: results are appended and flushed after every video, and a re-run
 skips every ``original_path`` already in the results file, so Ctrl+C, a
 reboot, or PC sleep just picks up where it left off. (The 6,649-video scan
 taught us that lesson: never let an interrupted run wipe finished work.)
+Only definitive rows are skipped: a title was found, or Shazam was asked
+and said no match. Rows that failed with an error (e.g. ``no_audio``
+because ffmpeg or the drive was unavailable) are retried on the next run,
+not skipped forever.
 
 Run from inside the ``app/`` directory, e.g. on Windows::
 
@@ -89,11 +93,28 @@ def main() -> int:
         if not raw.endswith(b"\n"):
             raw = raw[: raw.rfind(b"\n") + 1]  # drop a torn final line
             out_csv.write_bytes(raw)
+        # Resume skips only definitive rows: a title was found, or Shazam
+        # was asked and said no match (empty title, no error). Rows that
+        # failed with an error (e.g. no_audio because ffmpeg or the drive
+        # was unavailable) are dropped here so the next run retries them
+        # instead of skipping them forever.
+        kept: list[dict] = []
+        dropped = 0
         for r in _read_rows(out_csv):
             p = (r.get("original_path") or "").strip()
+            if p and (r.get("error") or "").strip():
+                dropped += 1
+                continue
             if p:
                 done.add(p)
-        print(f"resuming: skipping {len(done)} already-done videos")
+            kept.append(r)
+        if dropped:
+            with out_csv.open("w", newline="", encoding="utf-8-sig") as fh:
+                writer = csv.DictWriter(fh, fieldnames=OUT_FIELDS)
+                writer.writeheader()
+                writer.writerows(kept)
+            print(f"resuming: skipping {len(done)} already-done videos, "
+                  f"retrying {dropped} errored videos")
     out_csv.parent.mkdir(parents=True, exist_ok=True)
 
     tmp = Path(tempfile.gettempdir()) / "ktvocr_songid"
