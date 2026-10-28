@@ -75,7 +75,6 @@ prebuilt wheel for 3.15, so pip tries (and fails) to compile it from source.
 ```bash
 cd ktvocr/app
 uvicorn main:app --host 0.0.0.0 --port 8000
-# py -3.11 -m uvicorn main:app --host 0.0.0.0 --port 8000
 # open http://localhost:8000
 ```
 
@@ -225,3 +224,17 @@ docker run -p 8000:8000 -v "$PWD/output:/srv/app/output" ktvocr
   back to OCR; it never returns language or singer gender; and batch mode
   pauses 2 s between videos to avoid hammering the unofficial endpoint —
   don't point it at all 10,000 videos in one go and expect no throttling.
+  **Titles only, not singers:** Shazam identifies the *song*, but karaoke
+  videos are usually covers, so the artist it returns is the original
+  singer, not the singer in the video (verified Oct 2026: 5/5 titles
+  correct, singers unreliable). To fill in titles that are still missing
+  after a scan, without redoing the OCR, use `songid_batch.py` — it only
+  touches rows whose `title_final` is empty, writes results to a separate
+  file, and resumes where it left off if interrupted:
+  ```
+  py -3.11 songid_batch.py 國語_cleaned.csv -o songid_titles.csv
+  ```
+  `--limit 5` does the first 5 rows as a smoke test. Send
+  `songid_titles.csv` back for the merge — only `songid_title` fills an
+  empty `title_final`; `songid_artist` is recorded for reference only and
+  never becomes a singer.
