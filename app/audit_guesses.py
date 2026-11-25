@@ -82,6 +82,26 @@ def main() -> None:
     for s, c in Counter(s for s in s1 if s).most_common(12):
         print(f"  {c:4d}x  {s}")
 
+    print("\n== garbage text suspects (repetitive symbols, numbers) ==")
+    import re
+    garbage_patterns = [
+        (re.compile(r'^[?！#]+$'), "repetitive symbols"),
+        (re.compile(r'^(\d|\#){3,}$'), "repetitive numbers/symbols"),
+        (re.compile(r'^\d{2,}%$', re.UNICODE), "percentage like '37%'"),
+        (re.compile(r'^[!?#]{2,}$'), "short symbol strings"),
+    ]
+    garbage_count = 0
+    for t in titles:
+        for pat, _ in garbage_patterns:
+            if pat.match(t):
+                garbage_count += 1
+                break
+    print(f"  title_guess with garbage pattern: {garbage_count}")
+
+    # Check for short non-alpha text (likely OCR misreads)
+    non_alpha_titles = [t for t in titles if t and len(t) <= 10 and sum(1 for c in t if c.isalpha()) < 2]
+    print(f"  short non-alphabetic titles (<=10 chars, <2 letters): {len(non_alpha_titles)}")
+
     print("\n== long title suspects (song titles are short; lyrics are long) ==")
     long_t = [(t, len(t)) for t in titles if len(t) > 12]
     print(f"titles longer than 12 chars: {len(long_t)} ({pct(len(long_t), n)})")

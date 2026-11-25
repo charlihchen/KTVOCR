@@ -139,6 +139,10 @@ _CREDIT_VAL_RE = re.compile(
 )
 _CJK_RUN_RE = re.compile(r"[\u4e00-\u9fff]{2,}")
 
+# Minimum OCR confidence threshold (EasyOCR returns 0.0-1.0)
+# 0.65 is aggressive - consider using 0.5 for more permissive filtering
+MIN_CONFIDENCE = 0.5
+
 
 def _credit_names(surface: str) -> set[str]:
     """Names credited on the card (作詞：石國人 -> {石國人})."""
@@ -160,6 +164,15 @@ _JUNK_RE = re.compile(r"^[\d\s:：\-_/\\.,，。！？?!;；()（）\[\]【】�
 _TIME_RE = re.compile(r"^\d{1,2}:\d{2}(:\d{2})?$")
 _WRAP_PAIRS = {"《": "》", "『": "』", "「": "」", "【": "】", "(": ")"}
 
+# ============================================================================
+# IMPROVEMENT: Additional garbage detection patterns
+# These catch common OCR misreads that were being treated as valid guesses
+# ============================================================================
+# Patterns for common garbage text (repetitive characters, symbols, etc.)
+_GARBAGE_RE = re.compile(r"^[?！#〝「』《》【】、：；，。！？！@%$^*()]+$")
+# Text that is mostly non-alphabetic (likely OCR errors)
+_NUMERIC_SYMBOLIC_RE = re.compile(r"^[0-9!?#%$^*〝@]+$")
+
 
 def _clean_text(t: str) -> str:
     """Strip decorative wrappers (《title》) and stray music symbols."""
@@ -174,6 +187,14 @@ def _clean_text(t: str) -> str:
 
 
 def _is_junk(t: str) -> bool:
+    """Check if text is garbage/junk that shouldn't be a title or singer.
+
+    This has been improved to catch more OCR misreads like:
+    - Repetitive symbols: ???, ###, !!!
+    - Mixed garbage: # : # N, ?!#$%
+    - Single repeated characters
+    - Mostly symbols/numbers in short text
+    """
     if not t or len(t) < 2:
         return True
     if _TIME_RE.match(t):
@@ -182,6 +203,23 @@ def _is_junk(t: str) -> bool:
         return True
     if t.lower() in _WATERMARK_WORDS:
         return True
+
+    # NEW: Check for garbage patterns
+    if _GARBAGE_RE.match(t):
+        return True
+    if _NUMERIC_SYMBOLIC_RE.match(t):
+        return True
+
+    # NEW: Check for all same characters (e.g., "####", "????")
+    if len(set(t)) == 1:
+        return True
+
+    # NEW: For short text, require at least some alphabetic content
+    if len(t) <= 10:
+        alpha_count = sum(1 for c in t if c.isalpha())
+        if alpha_count < 2:
+            return True
+
     return False
 
 
@@ -207,12 +245,14 @@ def _frame_size(fp: Path) -> tuple[int, int]:
         return (0, 0)
 
 
-def _read_frame(fp: Path, img_h: int = 0) -> list[tuple[str, float, float, float]]:
+def _read_frame(fp: Path, img_h: int = 0, min_conf: float = MIN_CONFIDENCE) -> list[tuple[str, float, float, float]]:
     """OCR one image with every loaded script model.
 
     Text detection runs once (it is script-independent); recognition runs
     once per script group and the results are merged. Returns
     [(text, conf, box_area, y_center_0to1)]. Never raises.
+
+    min_conf: minimum confidence threshold (default MIN_CONFIDENCE)
     """
     readers = _get_ocr_readers()
     if not readers:
@@ -249,6 +289,9 @@ def _read_frame(fp: Path, img_h: int = 0) -> list[tuple[str, float, float, float
                 c = float(conf)
             except Exception:
                 c = 0.0
+            # Skip low confidence results
+            if c < min_conf:
+                continue
             area = _bbox_area(bbox)
             y = 0.5
             if img_h:
@@ -438,6 +481,57 @@ def _tidy_value(v: str) -> str:
     return v.strip()
 
 
+# ============================================================================
+# IMPROVEMENT: Validation functions for title and singer
+# These prevent garbage text from passing through as guesses
+# ============================================================================
+# English title character set for validation
+_EN_TITLE_RE = re.compile(r"^[a-zA-Z0-9\s\'\-\.\(\)&]+$")
+# English singer character set for validation
+_EN_SINGER_RE = re.compile(r"^[a-zA-Z0-9\s\'\-\.&]+$")
+
+
+def _is_valid_title(t: str) -> bool:
+    """Check if text looks like a valid song title.
+
+    Must have meaningful content, not just symbols/garbage.
+    """
+    if not t or len(t) < 2 or len(t) > 50:
+        return False
+    # CJK titles - must have valid CJK characters
+    if _CJK_RE.search(t):
+        # Remove spaces for length check (CJK names don't have spaces)
+        core = re.sub(r"\s+", "", t)
+        return 2 <= len(core) <= 20
+    # English titles - must have at least 2 letters
+    if _EN_TITLE_RE.match(t):
+        letters = sum(1 for c in t if c.isalpha())
+        return letters >= 2
+    # Mixed language - must have some meaningful content
+    letters = sum(1 for c in t if c.isalpha())
+    return letters >= 2
+
+
+def _is_valid_singer(s: str) -> bool:
+    """Check if text looks like a valid singer name.
+
+    Must look like a name, not a symbol or number.
+    """
+    if not s or len(s) < 1 or len(s) > 30:
+        return False
+    # CJK singer names - valid CJK characters
+    if _CJK_RE.search(s):
+        core = re.sub(r"\s+", "", s)
+        return 1 <= len(core) <= 15
+    # English names - allow &, -, ', space
+    if _EN_SINGER_RE.match(s):
+        letters = sum(1 for c in s if c.isalpha())
+        return letters >= 2
+    # Mixed language
+    letters = sum(1 for c in s if c.isalpha())
+    return letters >= 1
+
+
 def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
     """Guess (title, singer, singer2) from ranked OCR candidates.
 
@@ -522,8 +616,11 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
             top = ranked[:8]
             early = [e for e in top if e[2].get("early")]
             pick = max(early or top, key=lambda e: e[2].get("max_area", 0))
-            title = _tidy_value(pick[1])
-            title_key = _key_of(title)
+            candidate_title = _tidy_value(pick[1])
+            # IMPROVEMENT: Only accept if it looks like a valid title
+            if _is_valid_title(candidate_title):
+                title = candidate_title
+                title_key = _key_of(title)
         if not singer:
             ty = _title_y()
             cands = [e for e in ranked
@@ -538,14 +635,17 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
                 zone.sort(key=lambda e: (
                     max(0.0, e[2].get("y_avg", 0.5) - ty2),
                     -e[2].get("score", 0)))
-                singer = _tidy_value(zone[0][1])
+                candidate_singer = _tidy_value(zone[0][1])
+                # IMPROVEMENT: Only accept if it looks like a valid singer name
+                if _is_valid_singer(candidate_singer):
+                    singer = candidate_singer
     # Singer 2: unlabeled second name on the card (duet "主唱：莊振凱" with
     # "向蕙玲" on the next line). Name-like only (2-6 chars), on the card
     # (early), in the singer zone, never a credited name — so a lyric line
     # or logo can never be picked. Empty when nothing qualifies.
     singer2 = ""
     if singer:
-        ty = _title_y()
+        ty = _title_y() or 0.5
         title_key, singer_key = _key_of(title), _key_of(singer)
         by_score = sorted(_usable(pool), key=lambda e: e[2].get("score", 0),
                           reverse=True)
@@ -556,7 +656,13 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
                  and e[2].get("early")]
         zone = _singer_zone(cands, ty)
         if zone:
-            singer2 = _tidy_value(zone[0][1])
+            zone.sort(key=lambda e: (
+                max(0.0, e[2].get("y_avg", 0.5) - ty),
+                -e[2].get("score", 0)))
+            candidate_singer2 = _tidy_value(zone[0][1])
+            # IMPROVEMENT: Only accept if it looks like a valid singer name
+            if _is_valid_singer(candidate_singer2):
+                singer2 = candidate_singer2
     return (title, singer, singer2)
 
 
