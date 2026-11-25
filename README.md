@@ -64,6 +64,45 @@ See [`app/`](app/) for a tool that automates the renaming: it scans karaoke vide
 - **Web UI** — upload videos one by one, confirm the OCR guesses with one click, rename.
 - **Batch mode** — `python batch.py scan <folder> -o guesses.csv`, review/edit the CSV, then `python batch.py apply guesses.csv --outdir renamed/`.
 
+### How to rename your videos (batch mode)
+
+The batch tool scans a folder, writes its guesses to a CSV for you to
+review, then copies the reviewed files to their new names. It never
+moves, overwrites, or deletes your originals.
+
+```bash
+cd app
+
+# 0) sanity check first (tells you exactly what is broken, if anything)
+py -3.11 batch.py check        # Windows, Python 3.11
+python3 batch.py check         # macOS / Linux
+
+# 1) scan a folder of videos, write machine guesses for human review
+py -3.11 batch.py scan C:\karaoke -o guesses.csv --secs 30
+
+# 2) open guesses.csv in Excel and review it:
+#    - correct the *_final columns (title_final, singer_final,
+#      singer2_final, language_final, category_final)
+#    - every row needs title + singer + language + category filled in,
+#      or `apply` skips that row (its status stays blank)
+#    - language must be one of: 英語 國語 日語 韓語 台語 粵語
+#    - category must be one of: 男歌星 女歌星 團體 合唱 外國男 外國女 外國團體
+#    - put "skip" in status for rows to leave alone
+#    - save via "CSV UTF-8 (Comma delimited)" if offered, so CJK text
+#      survives the round trip (`apply` also tolerates plain Excel saves)
+
+# 3) apply the reviewed CSV (copies files, never moves them)
+py -3.11 batch.py apply guesses.csv --outdir renamed/
+# -> renamed copies land in renamed/
+# -> writes guesses.applied.csv next to the input CSV, with new_name
+#    and status ("done" / "source missing" / "invalid language/category")
+#    filled in per row
+```
+
+Resulting filename: `singer-songName-language-songCategory.ext`
+(duets: `singer1&singer2-songName-language-songCategory.ext`).
+See [`app/README.md`](app/README.md) for the full reference.
+
 ### App Web UI screenshot
 
 <img width="624" height="885" alt="image" src="https://github.com/user-attachments/assets/1be84357-7ce1-4681-92a4-e1eb9f03f453" />
