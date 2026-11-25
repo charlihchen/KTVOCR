@@ -11,7 +11,7 @@ Write down as many as information from the song, and then close the video, then 
 
    It is 10,000 songs, you will take time to rename files.
 So, fopefully to write an APP to load or scan those files and do the video OCR to grap the singer name and song title.
-Of cuse that capture the video audio to see what kind of language that it is singing? Chinese, Taiwanese, English, Korean, or Japanese etc.
+Of course that capture the video audio to see what kind of language that it is singing? Chinese, Taiwanese, English, Korean, or Japanese etc.
 
 | For part of file name | 1 | 2 | 3 | 4 | 5 | 6 |
 |---|---|---|---|---|---|---|
