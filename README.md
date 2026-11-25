@@ -3,15 +3,14 @@ Karaoke music video OCR
 
 ## in English
 
-Ten thousand karaoke music video filenames need to be changed to singer-songName-language-songCategory.
+Ten thousand karaoke music video filenames need to be changed to the file name format: Singer-SongName-language-songCategory.
 
 To identify a song as Chinese, English, Japanese, Korean, etc., a human must open and play each file individually 10,000 times. 
-
 After that, you will see the song's title and the name of the singer or group. Finally, you may identify the song as a fork, pop, children's song, etc.
 
 After writing down as much information as you can about the music, close the video and rename the file to singer-songName-language-songCategory.
 
-   Renaming the 10,000 songs will take some time.
+Renaming the 10,000 songs will take some time.
 In order to obtain the singer's name and song title, it would be ideal to create an application that loads or scans those data and does OCR on the video.
 Naturally, they record the audio in order to determine the type of language being sung. English, Korean, Japanese, Chinese, Taiwanese, etc.
 
