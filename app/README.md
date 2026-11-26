@@ -244,7 +244,7 @@ docker run -p 8000:8000 -v "$PWD/output:/srv/app/output" ktvocr
 The KTVOCR app is using py script to load file.csv to copy source files to destination folder, and then rename those files.
 Therefore, the KTVOCR rename process will take some disk space for those renaming files.
 
-OK, I asked Muse AI to prepare a 2 columns sheet of Excel file for me to do the importing on reNamer.exe to do the renaming on original files whiteout using another disk space.
+OK, I asked Muse AI to prepare a 2 columns(path/mv.mkv and new_file_name.mkv column) sheet of Excel file for me to do the importing on reNamer.exe to do the renaming on original files whiteout using another disk space.
 You can prepare the Excel yourself from the file.csv by using Excel formula A2&"-"&C2&"-"&"F2.mkv" etc.
 Here is the sampler screenshot of using reNamer.exe:
 
