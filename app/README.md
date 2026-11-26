@@ -245,7 +245,7 @@ The KTVOCR app is using py script to load file.csv to copy source files to desti
 Therefore, the KTVOCR rename process will take some disk space for those renaming files.
 
 OK, I asked Muse AI to prepare a 2 columns sheet of Excel file for me to do the importing on reNamer.exe to do the renaming on original files whiteout using another disk space.
-You can prepare the Excel yourself from the file.csv by using Excel formula A2&"_"&C2&"_"&"F2.mkv" etc.
+You can prepare the Excel yourself from the file.csv by using Excel formula A2&"-"&C2&"-"&"F2.mkv" etc.
 Here is the sampler screenshot of using reNamer.exe:
 
 <img width="602" height="806" alt="image" src="https://github.com/user-attachments/assets/0f1a2dad-80e7-42ec-8972-48add588e693" />
