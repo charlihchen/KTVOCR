@@ -140,8 +140,8 @@ _CREDIT_VAL_RE = re.compile(
 _CJK_RUN_RE = re.compile(r"[\u4e00-\u9fff]{2,}")
 
 # Minimum OCR confidence threshold (EasyOCR returns 0.0-1.0)
-# 0.65 is aggressive - consider using 0.5 for more permissive filtering
-MIN_CONFIDENCE = 0.5
+# Set to 0.0 to disable confidence filtering - let garbage detection handle junk
+MIN_CONFIDENCE = 0.0
 
 
 def _credit_names(surface: str) -> set[str]:
@@ -495,39 +495,31 @@ def _is_valid_title(t: str) -> bool:
     """Check if text looks like a valid song title.
 
     Must have meaningful content, not just symbols/garbage.
+    Relaxed version - accepts longer titles and shorter ones.
     """
-    if not t or len(t) < 2 or len(t) > 50:
+    if not t or len(t) < 1 or len(t) > 100:
         return False
-    # CJK titles - must have valid CJK characters
+    # CJK titles - check for CJK/range characters
     if _CJK_RE.search(t):
-        # Remove spaces for length check (CJK names don't have spaces)
-        core = re.sub(r"\s+", "", t)
-        return 2 <= len(core) <= 20
-    # English titles - must have at least 2 letters
-    if _EN_TITLE_RE.match(t):
-        letters = sum(1 for c in t if c.isalpha())
-        return letters >= 2
-    # Mixed language - must have some meaningful content
-    letters = sum(1 for c in t if c.isalpha())
-    return letters >= 2
+        # Accept any CJK text with meaningful length
+        return True
+    # English titles - must have at least 1 letter
+   letters = sum(1 for c in t if c.isalpha())
+    return letters >= 1
 
 
 def _is_valid_singer(s: str) -> bool:
     """Check if text looks like a valid singer name.
 
     Must look like a name, not a symbol or number.
+    Relaxed version - accepts longer names and shorter ones.
     """
-    if not s or len(s) < 1 or len(s) > 30:
+    if not s or len(s) < 1 or len(s) > 50:
         return False
     # CJK singer names - valid CJK characters
     if _CJK_RE.search(s):
-        core = re.sub(r"\s+", "", s)
-        return 1 <= len(core) <= 15
-    # English names - allow &, -, ', space
-    if _EN_SINGER_RE.match(s):
-        letters = sum(1 for c in s if c.isalpha())
-        return letters >= 2
-    # Mixed language
+        return True
+    # English names - allow &, -, ', space, numbers
     letters = sum(1 for c in s if c.isalpha())
     return letters >= 1
 
@@ -617,8 +609,12 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
             early = [e for e in top if e[2].get("early")]
             pick = max(early or top, key=lambda e: e[2].get("max_area", 0))
             candidate_title = _tidy_value(pick[1])
-            # IMPROVEMENT: Only accept if it looks like a valid title
+            # Try validation, but fall through to raw pick if needed
             if _is_valid_title(candidate_title):
+                title = candidate_title
+                title_key = _key_of(title)
+            elif not title:
+                # Fallback: accept even if validation fails
                 title = candidate_title
                 title_key = _key_of(title)
         if not singer:
@@ -636,8 +632,11 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
                     max(0.0, e[2].get("y_avg", 0.5) - ty2),
                     -e[2].get("score", 0)))
                 candidate_singer = _tidy_value(zone[0][1])
-                # IMPROVEMENT: Only accept if it looks like a valid singer name
+                # Try validation, but fall through to raw pick if needed
                 if _is_valid_singer(candidate_singer):
+                    singer = candidate_singer
+                elif not singer:
+                    # Fallback: accept even if validation fails
                     singer = candidate_singer
     # Singer 2: unlabeled second name on the card (duet "主唱：莊振凱" with
     # "向蕙玲" on the next line). Name-like only (2-6 chars), on the card
@@ -645,8 +644,11 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
     # or logo can never be picked. Empty when nothing qualifies.
     singer2 = ""
     if singer:
-        ty = _title_y() or 0.5
+        ty = _title_y()
+        if ty is None:
+            ty = 0.5
         title_key, singer_key = _key_of(title), _key_of(singer)
+        # Keep original sorting by score, not by proximity to title
         by_score = sorted(_usable(pool), key=lambda e: e[2].get("score", 0),
                           reverse=True)
         cands = [e for e in by_score
@@ -656,12 +658,16 @@ def guess_title_singer(candidates: list[dict]) -> tuple[str, str, str]:
                  and e[2].get("early")]
         zone = _singer_zone(cands, ty)
         if zone:
+            # Use score as primary, proximity as secondary (like original)
             zone.sort(key=lambda e: (
                 max(0.0, e[2].get("y_avg", 0.5) - ty),
                 -e[2].get("score", 0)))
             candidate_singer2 = _tidy_value(zone[0][1])
-            # IMPROVEMENT: Only accept if it looks like a valid singer name
+            # Fallback: accept if it looks valid, otherwise take what we have
             if _is_valid_singer(candidate_singer2):
+                singer2 = candidate_singer2
+            elif not singer2 and zone:
+                # Last resort: take the zone pick even if validation fails
                 singer2 = candidate_singer2
     return (title, singer, singer2)
 
