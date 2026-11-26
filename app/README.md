@@ -238,3 +238,15 @@ docker run -p 8000:8000 -v "$PWD/output:/srv/app/output" ktvocr
   `songid_titles.csv` back for the merge — only `songid_title` fills an
   empty `title_final`; `songid_artist` is recorded for reference only and
   never becomes a singer.
+
+## Rename directly on original folder/files by using reNamer.exe
+
+The KTVOCR app is using py script to load file.csv to copy source files to destination folder, and then rename those files.
+Therefore, the KTVOCR rename process will take some disk space for those renaming files.
+
+OK, I asked Muse AI to prepare a 2 columns sheet of Excel file for me to do the importing on reNamer.exe to do the renaming on original files whiteout using another disk space.
+You can prepare the Excel yourself from the file.csv by using Excel formula A2&"_"&C2&"_"&"F2.mkv" etc.
+Here is the sampler screenshot of using reNamer.exe:
+
+<img width="602" height="806" alt="image" src="https://github.com/user-attachments/assets/0f1a2dad-80e7-42ec-8972-48add588e693" />
+
